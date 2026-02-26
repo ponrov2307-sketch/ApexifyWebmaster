@@ -118,16 +118,23 @@ def get_history():
 @app.get("/api/chart/{ticker}")
 def get_candlestick_chart(ticker: str):
     try:
-        session = get_safe_session()
-        chart_data = yf.download(ticker, period="1mo", interval="1d", progress=False, session=session)
+        # 🌟 ลบ get_safe_session() ออก แล้วให้ yf.download จัดการเอง
+        chart_data = yf.download(ticker, period="1mo", interval="1d", progress=False)
         
         if chart_data.empty: return []
         
         ohlc_list = []
+        # จัด Format ข้อมูลให้ ApexCharts อ่านได้ (Timestamp, Open, High, Low, Close)
         for index, row in chart_data.iterrows():
+            # ดักจับกรณี yfinance คืนค่ามาเป็น MultiIndex (เวอร์ชันใหม่)
+            open_p = float(row['Open'].iloc[0]) if isinstance(row['Open'], pd.Series) else float(row['Open'])
+            high_p = float(row['High'].iloc[0]) if isinstance(row['High'], pd.Series) else float(row['High'])
+            low_p = float(row['Low'].iloc[0]) if isinstance(row['Low'], pd.Series) else float(row['Low'])
+            close_p = float(row['Close'].iloc[0]) if isinstance(row['Close'], pd.Series) else float(row['Close'])
+
             ohlc_list.append({
-                "x": int(index.timestamp() * 1000), 
-                "y": [round(float(row['Open']), 2), round(float(row['High']), 2), round(float(row['Low']), 2), round(float(row['Close']), 2)]
+                "x": int(index.timestamp() * 1000), # แปลงเป็น Epoch time
+                "y": [round(open_p, 2), round(high_p, 2), round(low_p, 2), round(close_p, 2)]
             })
         return ohlc_list
     except Exception as e:
