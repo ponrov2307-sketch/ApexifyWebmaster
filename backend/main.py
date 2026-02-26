@@ -3,21 +3,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import os
+import sys
 import yfinance as yf
 import pandas as pd
 import asyncio
 import requests
 from datetime import datetime
-import sys
 
-# ชี้ Path กลับไปที่โฟลเดอร์หลักเพื่ออ่าน my_portfolio.json
-PORTFOLIO_FILE = os.path.join(os.path.dirname(__file__), "..", "my_portfolio.json")
+# นำเข้า config จากโฟลเดอร์หลัก
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+try:
+    from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+except ImportError:
+    TELEGRAM_BOT_TOKEN = None
+    TELEGRAM_CHAT_ID = None
 
-# ==========================================
-# ⚙️ ตั้งค่า Telegram Bot
-# ==========================================
-TELEGRAM_BOT_TOKEN = "ใส่_TOKEN_บอทของคุณที่นี่"
-TELEGRAM_CHAT_ID = "ใส่_CHAT_ID_ของคุณที่นี่"
+PORTFOLIO_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "my_portfolio.json"))
+HISTORY_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "portfolio_history.json"))
 
 app = FastAPI()
 
@@ -36,9 +38,6 @@ class AssetData(BaseModel):
     alert_price: float
     group: str
 
-# ==========================================
-# 💾 ฟังก์ชันจัดการข้อมูล
-# ==========================================
 def load_data():
     if not os.path.exists(PORTFOLIO_FILE): return []
     try:
@@ -50,8 +49,17 @@ def save_data(data):
     with open(PORTFOLIO_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
 
+def load_history():
+    if not os.path.exists(HISTORY_FILE): return []
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            hist_data = json.load(f)
+            # ดึงแค่ค่า 'val' 50 รายการล่าสุด ตามที่ main.py ทำ
+            return [entry['val'] for entry in hist_data[-50:]] if hist_data else []
+    except: return []
+
 # ==========================================
-# 🚀 Telegram Bot (เฝ้าราคาหุ้นเบื้องหลัง)
+# 🚀 Telegram Bot (Background Task)
 # ==========================================
 def send_telegram_msg(message: str):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return
@@ -63,7 +71,7 @@ def send_telegram_msg(message: str):
         print(f"Telegram Error: {e}")
 
 async def background_bot_task():
-    print("🤖 Apex Telegram Bot Started...")
+    print("🤖 Apex Telegram Bot Started! เฝ้าราคาให้แล้วครับเจ้านาย...")
     alerted_today = []
     
     while True:
@@ -73,21 +81,21 @@ async def background_bot_task():
                 await asyncio.sleep(300)
                 continue
                 
-            tickers = list(set([p['ticker'] for p in portfolio]))
+            tickers = list(set([p['ticker'].replace('.', '-') for p in portfolio]))
             raw_data = yf.download(tickers, period="1d", progress=False)
             df_c = raw_data['Close'] if 'Close' in raw_data else raw_data
             
             for p in portfolio:
                 t = p['ticker']
+                yf_t = t.replace('.', '-')
                 alert_price = float(p.get('alert_price', 0))
                 if alert_price > 0:
                     current_price = 0.0
-                    if isinstance(df_c, pd.DataFrame) and t in df_c.columns:
-                        current_price = float(df_c[t].dropna().iloc[-1])
-                    elif isinstance(df_c, pd.Series) and df_c.name == t:
+                    if isinstance(df_c, pd.DataFrame) and yf_t in df_c.columns:
+                        current_price = float(df_c[yf_t].dropna().iloc[-1])
+                    elif isinstance(df_c, pd.Series) and df_c.name == yf_t:
                         current_price = float(df_c.dropna().iloc[-1])
                     
-                    # ถ้าราคาลงมาถึงจุดตั้งเตือน
                     if 0 < current_price <= alert_price:
                         alert_id = f"{t}_{datetime.now().strftime('%Y-%m-%d')}"
                         if alert_id not in alerted_today:
@@ -97,30 +105,48 @@ async def background_bot_task():
         except Exception as e:
             print(f"Bot Error: {e}")
             
-        await asyncio.sleep(300) # บอทเช็คราคาทุก 5 นาที
+        await asyncio.sleep(300)
 
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(background_bot_task())
 
 # ==========================================
-# 🌐 Web API
+# 🌐 Web API สำหรับ Next.js
 # ==========================================
 @app.get("/api/dashboard")
 def get_dashboard():
     portfolio = load_data()
-    tickers = list(set([p['ticker'] for p in portfolio]))
+    tickers = list(set([p['ticker'].replace('.', '-') for p in portfolio]))
     market_data = {}
+    sparkline_data = {}
+    market_indices_data = {}
     
+    indices = {"^GSPC": "S&P 500", "^IXIC": "Nasdaq", "GC=F": "Gold", "THB=X": "THB"}
+    try:
+        idx_data = yf.download(list(indices.keys()), period="1d", progress=False)
+        idx_c = idx_data['Close'] if 'Close' in idx_data else idx_data
+        for k, name in indices.items():
+            if isinstance(idx_c, pd.DataFrame) and k in idx_c.columns:
+                market_indices_data[name] = float(idx_c[k].dropna().iloc[-1])
+            elif isinstance(idx_c, pd.Series) and idx_c.name == k:
+                market_indices_data[name] = float(idx_c.dropna().iloc[-1])
+    except: 
+        market_indices_data = {"S&P 500": 0, "Nasdaq": 0, "Gold": 0, "THB": 0}
+
     if tickers:
         try:
-            raw_data = yf.download(tickers, period="1d", progress=False)
+            raw_data = yf.download(tickers, period="7d", progress=False)
             df_c = raw_data['Close'] if 'Close' in raw_data else raw_data
             for t in tickers:
                 if isinstance(df_c, pd.DataFrame) and t in df_c.columns:
-                    market_data[t] = float(df_c[t].dropna().iloc[-1])
+                    series = df_c[t].dropna()
+                    market_data[t] = float(series.iloc[-1]) if not series.empty else 0.0
+                    sparkline_data[t] = series.tolist()[-7:] if not series.empty else []
                 elif isinstance(df_c, pd.Series) and df_c.name == t:
-                    market_data[t] = float(df_c.dropna().iloc[-1])
+                    series = df_c.dropna()
+                    market_data[t] = float(series.iloc[-1]) if not series.empty else 0.0
+                    sparkline_data[t] = series.tolist()[-7:] if not series.empty else []
         except: pass
 
     total_val, total_cost = 0.0, 0.0
@@ -128,7 +154,8 @@ def get_dashboard():
     
     for p in portfolio:
         t = p['ticker']
-        last_price = market_data.get(t, float(p.get('last_price', 0.0)))
+        yf_t = t.replace('.', '-')
+        last_price = market_data.get(yf_t, float(p.get('last_price', 0.0)))
         shares = float(p.get('shares', 0))
         cost = float(p.get('cost', 0))
         
@@ -141,8 +168,16 @@ def get_dashboard():
         total_cost += total_cost_asset
         
         assets.append({
-            "ticker": t, "shares": shares, "cost": cost, "alert_price": float(p.get('alert_price', 0)),
-            "last_price": last_price, "value": val, "profit": profit, "profit_pct": profit_pct, "group": p.get('group', 'Auto')
+            "ticker": t, 
+            "shares": shares, 
+            "cost": cost, 
+            "alert_price": float(p.get('alert_price', 0)),
+            "last_price": last_price, 
+            "value": val, 
+            "profit": profit, 
+            "profit_pct": profit_pct, 
+            "group": p.get('group', 'Auto'),
+            "sparkline": sparkline_data.get(yf_t, [])
         })
 
     return {
@@ -151,6 +186,8 @@ def get_dashboard():
             "total_profit": total_val - total_cost, 
             "total_profit_pct": ((total_val - total_cost) / total_cost * 100) if total_cost > 0 else 0
         },
+        "indices": market_indices_data,
+        "history": load_history(), # เพิ่มข้อมูลกราฟพอร์ตหลัก 50 วันย้อนหลัง
         "assets": sorted(assets, key=lambda x: x['value'], reverse=True)
     }
 
