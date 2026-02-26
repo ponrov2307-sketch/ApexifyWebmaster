@@ -15,11 +15,11 @@ def register_handlers():
         
         try:
             # เช็คว่าคนนี้เคยลงทะเบียนในฐานข้อมูลเราหรือยัง
-            res = db.table('users').select('*').eq('telegram_id', telegram_id).execute()
+            res = db.table('apex_users').select('*').eq('telegram_id', telegram_id).execute()
             
             if not res.data:
                 # ถ้ายังไม่เคย ให้สร้าง User ใหม่ลง Supabase
-                db.table('users').insert({
+                db.table('apex_users').insert({
                     'telegram_id': telegram_id,
                     'username': username,
                     'is_vip': False
@@ -56,7 +56,7 @@ def register_handlers():
             telegram_id = message.from_user.id
             
             # 1. หา user_id จากฐานข้อมูลก่อน
-            user_res = db.table('users').select('id').eq('telegram_id', telegram_id).execute()
+            user_res = db.table('apex_users').select('id').eq('telegram_id', telegram_id).execute()
             
             if not user_res.data:
                 bot.reply_to(message, "⚠️ คุณยังไม่ได้ลงทะเบียน กรุณาพิมพ์ /start ก่อนครับ")
@@ -65,7 +65,7 @@ def register_handlers():
             db_user_id = user_res.data[0]['id']
             
             # 2. บันทึกหุ้นลงตาราง portfolios
-            db.table('portfolios').insert({
+            db.table('apex_portfolios').insert({
                 'user_id': db_user_id,
                 'ticker': ticker,
                 'shares': shares,
