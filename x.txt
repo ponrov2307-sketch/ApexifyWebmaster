@@ -1,0 +1,25 @@
+ApexProject/
+├── app.py                # ไฟล์หลักสำหรับรัน NiceGUI (แค่ตัวเรียกใช้)
+├── bot.py                # ไฟล์หลักสำหรับรัน Telegram Bot (แค่ตัวเรียกใช้)
+├── .env                  # เก็บ Token/Secret (ห้ามอัปขึ้น Git)
+├── core/                 # 🧠 สมองส่วนกลาง (แชร์ระหว่าง Web และ Bot)
+│   ├── config.py         # ค่าคงที่, สไตล์สี, หัวข้อหุ้น
+│   ├── database.py       # ระบบเชื่อมต่อ DB (SQLite/PostgreSQL)
+│   ├── models.py         # นิยามตาราง Database (User, Stock, History)
+│   └── logger.py         # ระบบบันทึก Log การทำงาน
+├── services/             # 🌐 บริการภายนอก (ดึงข้อมูล)
+│   ├── yahoo_finance.py  # ดึงราคาหุ้น/ดัชนี (ปลอมตัวเป็น User ที่นี่)
+│   ├── gemini_ai.py      # เชื่อมต่อสมองกล AI วิเคราะห์พอร์ต
+│   └── news_fetcher.py   # ดึงข่าวหุ้นรายตัว
+├── web/                  # 🖥️ ส่วนหน้าเว็บ (NiceGUI)
+│   ├── auth.py           # ระบบ Login / Register / VIP Check
+│   ├── router.py         # จัดการเส้นทางหน้าเว็บ (หน้าแรก, หน้าตั้งค่า)
+│   └── components/       # ชิ้นส่วนหน้าจอ (แยกไฟล์เพื่อให้ AI แก้เฉพาะจุด)
+│       ├── ticker.py     # แถบราคาบนสุด
+│       ├── stats.py      # การ์ดตัวเลขสรุปพอร์ต
+│       ├── table.py      # ตารางหุ้น (ที่มีปุ่ม Edit/News)
+│       └── charts.py     # โค้ดวาดกราฟเทียน/Sparkline
+└── telegram/             # 🤖 ส่วนบอท (Telegram)
+    ├── handlers.py       # รับคำสั่ง /start, /help
+    ├── portfolio_cmd.py  # คำสั่งเช็คพอร์ตผ่านแชท
+    └── payment_cmd.py    # ระบบเติมเงิน/สมัคร VIP
