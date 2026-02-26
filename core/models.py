@@ -36,16 +36,16 @@ CREATE TABLE apex_portfolio_history (
 from core.database import db
 
 # --- ฟังก์ชันตัวช่วยดึงข้อมูล (Helper Functions) ---
-# เขียนเตรียมไว้เพื่อให้หน้าเว็บและบอทเรียกใช้งานได้ง่ายๆ บรรทัดเดียวจบ
 
 def get_user_by_telegram(telegram_id: int):
-    """ดึงข้อมูลลูกค้าจาก Telegram ID"""
+    """ดึงข้อมูลลูกค้าจาก Telegram ID (อ้างอิงจากคอลัมน์ user_id ในตารางบอทหลัก)"""
     if not db: return None
-    res = db.table('apex_users').select('*').eq('telegram_id', telegram_id).execute()
+    # แปลงเป็น str เพราะในตารางบอทหลักเก็บ user_id เป็น TEXT
+    res = db.table('users').select('*').eq('user_id', str(telegram_id)).execute()
     return res.data[0] if res.data else None
 
-def get_portfolio(user_id: int):
-    """ดึงพอร์ตหุ้นทั้งหมดของลูกค้ารายนั้น"""
+def get_portfolio(user_id: str):
+    """ดึงพอร์ตหุ้นทั้งหมดของลูกค้ารายนั้นจากตาราง portfolios"""
     if not db: return []
-    res = db.table('apex_portfolios').select('*').eq('user_id', user_id).execute()
+    res = db.table('portfolios').select('*').eq('user_id', str(user_id)).execute()
     return res.data
