@@ -8,9 +8,11 @@ GLOBAL_PRICE_CACHE = {}
 GLOBAL_SPARKLINE_CACHE = {}
 
 def update_global_cache_batch(tickers: list):
+    """🌟 อัปเดตราคาแบบ Intraday (ทุก 5-15 นาที) เพื่อกราฟ Sparkline ที่ขยับจริง"""
     if not tickers: return
     try:
-        data = yf.download(tickers, period="7d", interval="1d", progress=False, ignore_tz=True)
+        # ดึง 5 วันย้อนหลัง กราฟแท่งละ 15 นาที (ทำให้ Sparkline ขยับระหว่างวัน)
+        data = yf.download(tickers, period="5d", interval="15m", progress=False, ignore_tz=True)
         if data.empty: return
         for ticker in tickers:
             try:
@@ -22,7 +24,7 @@ def update_global_cache_batch(tickers: list):
                 if len(series) > 0:
                     closes = [float(c) for c in series.tolist()]
                     GLOBAL_PRICE_CACHE[ticker] = closes[-1] 
-                    GLOBAL_SPARKLINE_CACHE[ticker] = closes 
+                    GLOBAL_SPARKLINE_CACHE[ticker] = closes[-40:] # เอาแค่ 40 แท่งล่าสุดให้เส้นสวยๆ
             except Exception: pass
     except Exception as e:
         print(f"⚠️ Global Cache Update Error: {e}")
@@ -103,7 +105,6 @@ def get_sp500_ytd():
         return months, returns
     except: return ['Jan'], [0]
 
-# 🌟 ฟังก์ชันใหม่ 1: ดึงข้อมูลปันผลจริง!
 def get_real_dividend_data(tickers: list):
     dividend_items = {}
     try:
@@ -125,7 +126,6 @@ def get_real_dividend_data(tickers: list):
         print(f"Dividend API Error: {e}")
     return dividend_items
 
-# 🌟 ฟังก์ชันใหม่ 2: คำนวณ Growth ของพอร์ตจริงๆ ย้อนหลัง 30 วัน!
 def get_portfolio_historical_growth(portfolio_items: list):
     if not portfolio_items: return ['Mon'], [0]
     tickers = [item['ticker'] for item in portfolio_items]
@@ -151,3 +151,49 @@ def get_portfolio_historical_growth(portfolio_items: list):
         return dates, total_values
     except:
         return ['Mon'], [0]
+
+def get_advanced_stock_info(tickers: list):
+    """ดึงข้อมูล Sector และ Target Price ของจริงจาก Yahoo Finance"""
+    info_dict = {}
+    for ticker in tickers:
+        try:
+            t = yf.Ticker(ticker)
+            info = t.info
+            info_dict[ticker] = {
+                'sector': info.get('sector', 'Unknown'),
+                'target_price': info.get('targetMeanPrice', 0),
+                'beta': info.get('beta', 1.0)
+            }
+        except:
+            info_dict[ticker] = {'sector': 'Unknown', 'target_price': 0, 'beta': 1.0}
+    return info_dict
+
+def calculate_rsi_from_prices(prices, period=14):
+    """คำนวณ RSI ของจริงจากลิสต์ราคาปิด"""
+    if len(prices) < period + 1:
+        return 50
+    try:
+        series = pd.Series(prices)
+        delta = series.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return int(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else 50
+    except:
+        return 50
+def get_support_resistance(ticker: str):
+    """คำนวณหาแนวรับ-แนวต้านอัตโนมัติจากข้อมูล 3 เดือนย้อนหลัง"""
+    try:
+        ohlc = get_candlestick_data(ticker, period="3mo")
+        if not ohlc: return 0, 0
+        
+        lows = sorted([d['low'] for d in ohlc])
+        highs = sorted([d['high'] for d in ohlc], reverse=True)
+        
+        # เฉลี่ยจุดต่ำสุด 5 จุด และสูงสุด 5 จุด เพื่อความแม่นยำ
+        support = sum(lows[:5]) / 5 if len(lows) >= 5 else lows[0]
+        resistance = sum(highs[:5]) / 5 if len(highs) >= 5 else highs[0]
+        return round(support, 2), round(resistance, 2)
+    except:
+        return 0, 0    

@@ -4,7 +4,6 @@ import random
 import pandas as pd
 from datetime import datetime
 import asyncio
-
 # Components & Services
 from web.components.ticker import create_ticker
 from web.components.stats import create_stats_cards
@@ -13,7 +12,7 @@ from web.components.charts import show_candlestick_chart
 from services.yahoo_finance import get_sparkline_data, get_live_price, update_global_cache_batch, get_real_dividend_data, get_portfolio_historical_growth
 from services.news_fetcher import fetch_stock_news_summary
 from services.gemini_ai import generate_apexify_report
-
+# สร้างบอทสำหรับยิงข้อความในระบบหลังบ้าน
 # DB & Auth
 from core.models import get_portfolio, add_portfolio_stock, update_portfolio_stock, delete_portfolio_stock, get_user_by_telegram, get_all_unique_tickers
 from web.auth import login_page, require_login, logout
@@ -33,33 +32,6 @@ ui.add_head_html('''
         .blink-red { animation: pulse-red 2s infinite ease-in-out; }
     </style>
 ''', shared=True)
-
-
-# ==========================================
-# 🌟 ระบบเบื้องหลัง (Background Worker)
-# ==========================================
-async def global_market_updater():
-    """ตัวแทน 1 เดียวที่จะไปดึงราคาหุ้นทั้งหมดมาจาก Yahoo (กันเว็บโดนแบน)"""
-    while True:
-        try:
-            # ดึงรายชื่อหุ้นทั้งหมดที่ไม่ซ้ำกันจากฐานข้อมูล
-            tickers = get_all_unique_tickers()
-            if tickers:
-                # ให้รันใน thread แยกเพื่อไม่ให้หน้าเว็บกระตุก
-                await run.io_bound(update_global_cache_batch, tickers)
-        except Exception as e:
-            print(f"Global Updater Error: {e}")
-        
-        # ถ้านอกเวลาตลาดปิด ให้พักผ่อน อัปเดตชั่วโมงละ 1 ครั้งพอ ประหยัดแบตเซิร์ฟเวอร์
-        current_hour = datetime.now().hour
-        is_market_open = (current_hour >= 20) or (current_hour <= 4)
-        sleep_time = 30 if is_market_open else 3600
-        
-        await asyncio.sleep(sleep_time)
-
-# 🌟 สั่งให้ Worker ทำงานทันทีที่เปิดรันโค้ด
-app.on_startup(lambda: asyncio.create_task(global_market_updater()))
-
 
 # ==========================================
 # 🛠️ ฟังก์ชันช่วยเหลือ (MODALS & POPUPS)
@@ -139,10 +111,15 @@ async def handle_edit(ticker):
     asset = next((a for a in portfolio if a['ticker'] == ticker), None)
     if not asset: return
 
+    # ดึงราคาปัจจุบัน และคำนวณแนวรับแนวต้านทันที
     current_price = get_live_price(ticker)
+    from services.yahoo_finance import get_support_resistance
+    support, resistance = get_support_resistance(ticker)
+    
+    saved_alert = float(asset.get('alert_price', 0))
+    default_alert = saved_alert if saved_alert > 0 else current_price * 0.95
 
-    # 🌟 ธีม Glassmorphism พรีเมียม
-    with ui.dialog() as dialog, ui.card().classes('w-[450px] bg-[#0D1117]/80 backdrop-blur-2xl border border-white/10 p-0 rounded-3xl overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.8)]'):
+    with ui.dialog() as dialog, ui.card().classes('w-[450px] bg-[#0D1117]/90 backdrop-blur-2xl border border-white/10 p-0 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]'):
         with ui.row().classes('w-full bg-gradient-to-r from-[#161B22] to-[#1C2128] p-5 border-b border-white/5 justify-between items-center'):
             with ui.row().classes('items-center gap-3'):
                 ui.icon('tune', size='sm').classes('text-[#D0FD3E]')
@@ -150,16 +127,20 @@ async def handle_edit(ticker):
             ui.button(icon='close', on_click=dialog.close).props('flat dense round').classes('text-gray-500 hover:text-[#FF453A] transition-colors')
         
         with ui.column().classes('p-6 w-full gap-5'):
-            # ส่วนหัวโชว์ราคา
+            # 🌟 แสดงราคาปัจจุบัน พร้อมแนวรับ-แนวต้านเล็กๆ
             with ui.row().classes('w-full justify-between items-center bg-[#11141C]/50 p-4 rounded-2xl border border-white/5 shadow-inner'):
                 with ui.column().classes('gap-0'):
                     ui.label(ticker).classes('text-2xl font-black text-white tracking-wider')
                     ui.label('Current Market Price').classes('text-[10px] text-gray-500 uppercase tracking-widest font-bold')
-                ui.label(f"${current_price:,.2f}").classes('text-3xl font-black text-[#D0FD3E] drop-shadow-[0_0_10px_rgba(208,253,62,0.3)]')
+                
+                with ui.column().classes('items-end gap-1'):
+                    ui.label(f"${current_price:,.2f}").classes('text-3xl font-black text-[#D0FD3E] drop-shadow-[0_0_10px_rgba(208,253,62,0.3)] leading-none')
+                    with ui.row().classes('gap-2'):
+                        ui.label(f'Res: ${resistance}').classes('text-[9px] font-bold text-[#FF453A] bg-[#FF453A]/10 px-1.5 py-0.5 rounded')
+                        ui.label(f'Sup: ${support}').classes('text-[9px] font-bold text-[#32D74B] bg-[#32D74B]/10 px-1.5 py-0.5 rounded')
             
             ui.element('div').classes('w-full h-[1px] bg-gradient-to-r from-transparent via-gray-700 to-transparent my-1')
 
-            # ฟอร์มแก้ไข
             with ui.row().classes('w-full gap-4'):
                 with ui.column().classes('flex-1 gap-1'):
                     ui.label('Shares (จำนวน)').classes('text-xs text-gray-400 font-bold tracking-wider')
@@ -168,34 +149,38 @@ async def handle_edit(ticker):
                     ui.label('Avg Cost (ต้นทุน)').classes('text-xs text-gray-400 font-bold tracking-wider')
                     cost_input = ui.number(value=float(asset['avg_cost']), format='%.4f').classes('w-full').props('outlined dark step=0.01 rounded')
 
-            with ui.row().classes('w-full gap-4'):
+            with ui.row().classes('w-full gap-4 items-end'):
+                with ui.column().classes('flex-[1.5] gap-1'):
+                    # 🌟 ช่อง Alert พร้อมปุ่ม Auto Support
+                    with ui.row().classes('w-full justify-between items-center'):
+                        ui.label('Price Alert').classes('text-xs text-gray-400 font-bold tracking-wider')
+                        if support > 0:
+                            ui.button('AUTO S/R', on_click=lambda: alert_input.set_value(support)).props('flat dense size=xs').classes('text-[#32D74B] text-[9px] font-black tracking-widest hover:bg-white/5 px-2 rounded')
+                    
+                    alert_input = ui.number(value=default_alert, format='%.2f').classes('w-full').props('outlined dark rounded')
+                
                 with ui.column().classes('flex-1 gap-1'):
-                    ui.label('Price Alert (แจ้งเตือน)').classes('text-xs text-gray-400 font-bold tracking-wider')
-                    ui.number(value=current_price*0.95, format='%.2f').classes('w-full').props('outlined dark rounded')
-                with ui.column().classes('flex-1 gap-1'):
-                    ui.label('Strategy Group').classes('text-xs text-gray-400 font-bold tracking-wider')
-                    asset_group_select = ui.select(['DCA', 'DIV', 'TRADING', 'ALL'], value=asset.get('asset_group', 'ALL')).classes('w-full').props('outlined dark rounded')
+                    ui.label('Group').classes('text-xs text-gray-400 font-bold tracking-wider')
+                    asset_group_select = ui.select(['ALL', 'DCA', 'DIV', 'TRADING'], value=asset.get('asset_group', 'ALL')).classes('w-full').props('outlined dark rounded')
 
             def save_edit():
-                if update_portfolio_stock(user_id, ticker, shares_input.value, cost_input.value, asset_group_select.value):
-                    ui.notify(f'✅ บันทึกข้อมูล {ticker} สำเร็จ!', type='positive')
+                if update_portfolio_stock(user_id, ticker, shares_input.value, cost_input.value, asset_group_select.value, alert_input.value):
+                    ui.notify(f'✅ บันทึกข้อมูลและแจ้งเตือน {ticker} สำเร็จ!', type='positive')
                     dialog.close()
-                    ui.navigate.reload()
+                    ui.navigate.to('/') # 🌟 แก้ตรงนี้
 
             def confirm_delete():
                 if delete_portfolio_stock(user_id, ticker):
                     ui.notify(f'🗑️ ลบ {ticker} ออกจากพอร์ตแล้ว', type='warning')
                     dialog.close()
-                    ui.navigate.reload()
+                    ui.navigate.to('/') # 🌟 แก้ตรงนี้
 
-            # กลุ่มปุ่มกด
             with ui.row().classes('w-full gap-4 mt-2'):
-                ui.button('DELETE', on_click=confirm_delete).classes('flex-1 bg-[#FF453A]/10 text-[#FF453A] border border-[#FF453A]/30 font-black py-3 rounded-xl hover:bg-[#FF453A] hover:text-white transition-all')
+                ui.button('DELETE', on_click=confirm_delete).classes('flex-1 bg-transparent text-[#FF453A] border border-[#FF453A]/30 font-black py-3 rounded-xl hover:bg-[#FF453A] hover:text-white transition-all')
                 ui.button('SAVE CHANGES', on_click=save_edit).classes('flex-[2] bg-gradient-to-r from-[#D0FD3E] to-[#32D74B] text-black font-black py-3 rounded-xl shadow-[0_0_15px_rgba(50,215,75,0.4)] hover:scale-[1.02] transition-all')
 
     dialog.on('hide', lambda: app.storage.client.update({'modal_open': False}))
     dialog.open()
-
 async def handle_news(ticker):
     app.storage.client['modal_open'] = True
     current_price = get_live_price(ticker)
@@ -294,34 +279,38 @@ async def main_page():
     def dashboard_content():
         user_id = app.storage.user.get('user_id')
         telegram_id = app.storage.user.get('telegram_id')
+        user_info = get_user_by_telegram(telegram_id) if telegram_id else {}
         
-        # 🌟 ป้องกัน NoneType Error อย่างเด็ดขาด!
-        user_info = get_user_by_telegram(telegram_id)
-        if user_info is None:
-            user_info = {} # 🌟 ถ้าหาไม่เจอ ให้คืนค่าเป็น Dictionary ว่างๆ ป้องกัน Error
-            
         lang = app.storage.user.get('lang', 'TH')
         currency = app.storage.user.get('currency', 'USD')
         curr_sym = '฿' if currency == 'THB' else '$'
         curr_rate = 34.5 if currency == 'THB' else 1.0 
         
-        username = user_info.get('username', f'User_{str(telegram_id)[-4:]}' if telegram_id else 'Guest')
+        # 🌟 คำแปลภาษา
+        t_welcome = 'ยินดีต้อนรับ' if lang == 'TH' else 'Welcome back,'
+        t_status = 'พร้อมเทรด' if lang == 'TH' else 'Ready to trade'
+        t_port_val = 'มูลค่าพอร์ตรวม' if lang == 'TH' else 'TOTAL PORTFOLIO VALUE'
+        t_add_btn = '+ เพิ่มสินทรัพย์' if lang == 'TH' else '+ ADD HOLDING'
+        t_curr_port = 'พอร์ตปัจจุบัน' if lang == 'TH' else 'CURRENT PORTFOLIO'
+        
+        username = user_info.get('username', f"User_{str(telegram_id)[-4:]}" if telegram_id else 'Guest')
         role = str(user_info.get('role', 'free')).upper()
         role_color = 'text-[#D0FD3E]' if role in ['PRO', 'VIP', 'ADMIN'] else 'text-gray-400'
         
         expiry = user_info.get('vip_expiry')
         expiry_txt = f'Valid till: {expiry}' if expiry else 'No Expiry'
-        status_txt = expiry_txt if role in ['PRO', 'VIP', 'ADMIN'] else 'Ready to trade'
-        
-        # ... (โค้ดดึง Portfolio ดำเนินการต่อจากตรงนี้ตามปกติ) ...
+        status_txt = expiry_txt if role in ['PRO', 'VIP', 'ADMIN'] else t_status
+
         raw_portfolio = get_portfolio(user_id) if user_id else []
         current_group = app.storage.client.get('dashboard_group', 'ALL')
         
         assets = []
         total_invested, net_worth = 0, 0
+        spy_rsi = 50 # ค่าตั้งต้น
+
+        from services.yahoo_finance import calculate_rsi_from_prices
 
         for item in raw_portfolio:
-            # 🌟 ตัดหุ้นที่ไม่ตรงกรุ๊ปทิ้งไปเลย! (จะไม่มีโผล่มาในตารางหรือยอดรวมอีก)
             if current_group != 'ALL' and item.get('asset_group', 'ALL') != current_group:
                 continue
                 
@@ -331,8 +320,12 @@ async def main_page():
             price = get_live_price(t)
             spark, is_up = get_sparkline_data(t, days=7)
             
+            # 🌟 คำนวณ RSI ของจริงจาก Sparkline
+            real_rsi = calculate_rsi_from_prices(spark, 14)
+            if t == 'VOO' or t == 'SPY': spy_rsi = real_rsi # แอบจำค่า S&P500 ไว้คำนวณ Fear/Greed
+            
             profit_pct = ((price - base_cost) / base_cost * 100) if base_cost > 0 else 0
-            assets.append({'ticker': t, 'shares': shares, 'avg_cost': base_cost, 'last_price': price, 'sparkline': spark, 'is_up': is_up, 'profit_pct': profit_pct})
+            assets.append({'ticker': t, 'shares': shares, 'avg_cost': base_cost, 'last_price': price, 'sparkline': spark, 'is_up': is_up, 'profit_pct': profit_pct, 'rsi': real_rsi})
             total_invested += shares * (base_cost * curr_rate)
             net_worth += shares * (price * curr_rate)
 
@@ -343,35 +336,40 @@ async def main_page():
         top_gainer = sorted_assets[0] if sorted_assets and sorted_assets[0]['profit_pct'] > 0 else None
         top_loser = sorted_assets[-1] if sorted_assets and sorted_assets[-1]['profit_pct'] < 0 else None
 
+        # 🌟 คำนวณ Fear & Greed อิงจาก S&P500 RSI
+        fg_value = int(spy_rsi * 1.2) if spy_rsi > 0 else 50
+        fg_value = min(max(fg_value, 0), 100)
+        fg_label = "EXTREME GREED" if fg_value > 75 else "GREED" if fg_value > 55 else "NEUTRAL" if fg_value > 45 else "FEAR" if fg_value > 25 else "EXTREME FEAR"
+        fg_color = "#32D74B" if fg_value > 55 else "#FF453A" if fg_value < 45 else "#8B949E"
+
         with ui.column().classes('w-full max-w-7xl mx-auto p-8 gap-6 pt-16'):
             with ui.row().classes('w-full gap-4 items-stretch'):
                 with ui.row().classes('flex-[2] justify-between items-center bg-[#161B22]/80 backdrop-blur-md p-5 rounded-3xl border border-white/5 shadow-lg'):
                     with ui.row().classes('items-center gap-4'):
                         ui.icon('account_circle', size='xl').classes(role_color)
                         with ui.column().classes('gap-0'):
-                            ui.label(f'Welcome back, {username}').classes('text-xl font-black text-white tracking-wide')
+                            ui.label(f'{t_welcome} {username}').classes('text-xl font-black text-white tracking-wide')
                             with ui.row().classes('items-center gap-2 mt-1'):
                                 ui.label(f'{role} MEMBER').classes(f'text-[10px] px-2 py-0.5 rounded border border-[{COLORS.get("primary")}]/30 bg-[{COLORS.get("primary")}]/10 {role_color} font-black tracking-widest')
                                 ui.label(status_txt).classes('text-xs text-gray-500 font-bold')
                 
-                # 🌟 ฟังก์ชันจัดการตอนเปลี่ยนพอร์ต
                 def change_portfolio_group(e):
                     app.storage.client['dashboard_group'] = e.value
                     dashboard_content.refresh()
                 
                 with ui.column().classes('flex-1 justify-center items-start bg-[#161B22]/80 backdrop-blur-md p-5 rounded-3xl border border-white/5 shadow-lg relative'):
-                    ui.label('CURRENT PORTFOLIO').classes('text-[10px] text-gray-500 font-black tracking-widest uppercase mb-1')
+                    ui.label(t_curr_port).classes('text-[10px] text-gray-500 font-black tracking-widest uppercase mb-1')
                     ui.select(['ALL', 'DCA', 'TRADING', 'DIV'], value=current_group, on_change=change_portfolio_group).classes('w-full').props('outlined dark dense rounded')
                 
                 with ui.column().classes('flex-[1.5] justify-center items-center bg-gradient-to-r from-[#161B22] to-[#1C2128] p-5 rounded-3xl border border-white/5 shadow-lg'):
                     ui.label('MARKET SENTIMENT').classes('text-[10px] text-gray-500 font-black tracking-widest uppercase mb-1')
                     with ui.row().classes('items-baseline gap-2'):
-                        ui.label('68').classes('text-4xl font-black text-[#32D74B]')
-                        ui.label('GREED').classes('text-sm font-bold text-[#32D74B] tracking-wider')
+                        ui.label(str(fg_value)).style(f'color: {fg_color};').classes('text-4xl font-black')
+                        ui.label(fg_label).style(f'color: {fg_color};').classes('text-sm font-bold tracking-wider')
 
             with ui.row().classes('w-full justify-between items-end mt-4 mb-2'):
                 with ui.column().classes('gap-0'):
-                    ui.label('TOTAL PORTFOLIO VALUE').classes('text-gray-400 font-bold tracking-widest text-xs mb-2')
+                    ui.label(t_port_val).classes('text-gray-400 font-bold tracking-widest text-xs mb-2')
                     with ui.row().classes('items-baseline gap-4'):
                         blink_class = 'blink-green' if is_profit_overall else 'blink-red'
                         color_class = 'text-[#32D74B]' if is_profit_overall else 'text-[#FF453A]'
@@ -391,10 +389,9 @@ async def main_page():
                             ui.label('TOP LOSER').classes('text-[9px] text-[#FF453A] font-black tracking-widest')
                             ui.label(f"{top_loser['ticker']} {top_loser['profit_pct']:.1f}%").classes('text-sm font-bold text-white')
                             
-                    ui.button('+ ADD HOLDING', on_click=handle_add_asset, color='#D0FD3E').classes('text-black font-black rounded-2xl px-6 py-4 shadow-[0_0_15px_rgba(208,253,62,0.4)] hover:scale-105 transition-all ml-4')
+                    ui.button(t_add_btn, on_click=handle_add_asset, color='#D0FD3E').classes('text-black font-black rounded-2xl px-6 py-4 shadow-[0_0_15px_rgba(208,253,62,0.4)] hover:scale-105 transition-all ml-4')
 
             create_portfolio_table(assets, on_edit=handle_edit, on_news=handle_news, on_chart=handle_chart)
-
     dashboard_content()
     
     def smart_refresh():
@@ -413,8 +410,17 @@ async def analytics_page():
     ui.query('body').style(f'background-color: {COLORS.get("bg", "#0D1117")}; font-family: "Inter", sans-serif;')
     create_ticker() 
 
+    lang = app.storage.user.get('lang', 'TH')
+    t_title = 'วิเคราะห์พอร์ตเชิงลึก' if lang == 'TH' else 'PORTFOLIO ANALYTICS'
+    t_sub = 'เจาะลึกประสิทธิภาพพอร์ตและกลยุทธ์ AI' if lang == 'TH' else 'Deep dive into your portfolio performance and AI strategy.'
+    
     user_id = app.storage.user.get('user_id')
     raw_portfolio = get_portfolio(user_id) if user_id else []
+    
+    # 🌟 ดึงข้อมูล Sector จริง
+    tickers_list = [item['ticker'] for item in raw_portfolio]
+    from services.yahoo_finance import get_advanced_stock_info
+    advanced_info = get_advanced_stock_info(tickers_list)
 
     def get_filtered_data(group='ALL'):
         filtered = [item for item in raw_portfolio if group == 'ALL' or item.get('asset_group', 'ALL') == group]
@@ -423,23 +429,25 @@ async def analytics_page():
         for item in filtered:
             val = item['shares'] * get_live_price(item['ticker']) 
             total += val
-            data.append({'ticker': item['ticker'], 'value': val, 'avg_cost': item['avg_cost'], 'shares': item['shares']})
+            sector = advanced_info.get(item['ticker'], {}).get('sector', 'Unknown')
+            data.append({'ticker': item['ticker'], 'value': val, 'shares': item['shares'], 'sector': sector})
         return sorted(data, key=lambda x: x['value'], reverse=True), total
 
     with ui.column().classes('w-full max-w-7xl mx-auto p-8 gap-6 pt-16 items-center'):
         
-        # 🌟 Header & Risk Metrics Score
         with ui.row().classes('w-full justify-between items-center bg-[#161B22]/80 backdrop-blur-md p-6 rounded-3xl border border-white/5 shadow-lg'):
             with ui.column().classes('gap-1'):
-                ui.label('PORTFOLIO ANALYTICS').classes('text-3xl font-black text-white tracking-widest uppercase')
-                ui.label('Deep dive into your portfolio performance and AI strategy.').classes('text-sm text-gray-400')
+                ui.label(t_title).classes('text-3xl font-black text-white tracking-widest uppercase')
+                ui.label(t_sub).classes('text-sm text-gray-400')
             
-            # Risk Widget
             with ui.row().classes('items-center gap-4 bg-[#0D1117] p-3 rounded-2xl border border-white/5'):
                 with ui.column().classes('items-end gap-0'):
                     ui.label('PORTFOLIO BETA (RISK)').classes('text-[10px] font-black text-gray-500 tracking-widest')
-                    ui.label('1.15 (Moderate)').classes('text-lg font-black text-white')
-                ui.circular_progress(value=0.6, show_value=False, size='40px', color='warning').classes('text-orange-400')
+                    # คำนวณ Beta เฉลี่ยของพอร์ต
+                    avg_beta = sum([advanced_info.get(t, {}).get('beta', 1.0) for t in tickers_list]) / max(len(tickers_list), 1)
+                    risk_label = "High" if avg_beta > 1.2 else "Moderate" if avg_beta > 0.8 else "Low"
+                    ui.label(f'{avg_beta:.2f} ({risk_label})').classes('text-lg font-black text-white')
+                ui.circular_progress(value=min(avg_beta/2, 1.0), show_value=False, size='40px', color='warning').classes('text-orange-400')
 
         mode_toggle = ui.toggle(['Allocation', 'Real Growth', 'AI Rebalance', 'Sector Flow'], value='Allocation') \
             .classes('bg-[#161B22] text-gray-400 rounded-xl p-1 border border-gray-800 shadow-inner') \
@@ -460,24 +468,21 @@ async def analytics_page():
             
             with chart_card:
                 if not assets_data and mode != 'Sector Flow':
-                    ui.label(f'No assets found in {current_group["val"]} group').classes('text-gray-500 absolute-center font-bold')
+                    ui.label('ไม่มีข้อมูล').classes('text-gray-500 absolute-center font-bold')
+                
                 elif mode == 'Allocation':
                     pie_data = [{'value': round(a['value'], 2), 'name': a['ticker']} for a in assets_data]
                     ui.echart({
                         'tooltip': {'trigger': 'item'},
                         'legend': {'orient': 'vertical', 'left': 'left', 'textStyle': {'color': '#8B949E'}},
-                        'series': [{
-                            'name': 'Portfolio', 'type': 'pie', 'radius': ['40%', '70%'],
-                            'itemStyle': {'borderRadius': 10, 'borderColor': '#161B22', 'borderWidth': 2},
-                            'label': {'show': True, 'position': 'outside', 'color': '#fff', 'formatter': '{b}\n{d}%'},
-                            'data': pie_data
-                        }]
+                        'series': [{'name': 'Portfolio', 'type': 'pie', 'radius': ['40%', '70%'], 'itemStyle': {'borderRadius': 10, 'borderColor': '#161B22', 'borderWidth': 2}, 'label': {'show': True, 'color': '#fff', 'formatter': '{b}\n{d}%'}, 'data': pie_data}]
                     }).classes('w-full h-full p-4')
                     with ui.column().classes('absolute-center items-center gap-0 pointer-events-none'):
                         ui.label(f"${total_value:,.0f}").classes('text-4xl font-black text-white drop-shadow-md')
                         ui.label('Total Value').classes('text-xs text-gray-500 font-bold uppercase tracking-widest')
 
                 elif mode == 'Real Growth':
+                    from services.yahoo_finance import get_portfolio_historical_growth
                     growth_dates, growth_values = await run.io_bound(get_portfolio_historical_growth, raw_portfolio)
                     ui.echart({
                         'tooltip': {'trigger': 'axis'},
@@ -488,75 +493,66 @@ async def analytics_page():
                     }).classes('w-full h-full p-4')
 
                 elif mode == 'AI Rebalance':
-                    # 🌟 AI Rebalance Manager UI
-                    with ui.column().classes('w-full h-full p-8 items-center text-center justify-center bg-gradient-to-br from-[#0D1117] to-[#161B22]'):
-                        ui.icon('auto_awesome', size='64px').classes('text-[#D0FD3E] drop-shadow-[0_0_15px_rgba(208,253,62,0.5)] mb-4')
+                    with ui.column().classes('w-full h-full p-8 items-center justify-center bg-gradient-to-br from-[#0D1117] to-[#161B22] relative'):
+                        ui.icon('auto_awesome', size='64px').classes('text-[#D0FD3E] mb-4')
                         ui.label('AI REBALANCE MANAGER').classes('text-2xl font-black text-white tracking-widest')
-                        ui.label('Gemini AI กำลังวิเคราะห์สัดส่วนพอร์ตของคุณเพื่อแนะนำการปรับสมดุล (Rebalance) ที่ดีที่สุด เพื่อลดความเสี่ยงและเพิ่มผลตอบแทน').classes('text-gray-400 mt-2 max-w-lg')
                         
-                        ui.button('GENERATE AI STRATEGY', icon='bolt').classes('mt-8 bg-[#32D74B] text-black font-black py-3 px-8 rounded-full shadow-[0_0_20px_rgba(50,215,75,0.4)] hover:scale-105 transition-transform')
+                        ai_loading = ui.spinner('dots', size='lg', color='#D0FD3E').classes('mt-4 hidden')
+                        ai_result = ui.label('').classes('text-sm text-gray-300 leading-relaxed text-center mt-6 max-w-xl hidden bg-[#11141C] p-6 rounded-2xl border border-white/5')
+                        
+                        # 🌟 ฟังก์ชันกดแล้วเรียก AI ทำงานจริง!
+                        async def generate_ai():
+                            btn_ai.set_visibility(False)
+                            ai_loading.classes(remove='hidden')
+                            
+                            # เตรียมข้อมูลพอร์ตส่งให้ AI
+                            port_str = ", ".join([f"{a['ticker']}: ${a['value']:,.0f}" for a in assets_data])
+                            from services.gemini_ai import generate_rebalance_strategy
+                            res = await run.io_bound(generate_rebalance_strategy, port_str)
+                            
+                            ai_loading.classes(add='hidden')
+                            ai_result.classes(remove='hidden')
+                            ai_result.set_text(res)
+                            
+                        btn_ai = ui.button('GENERATE REAL AI STRATEGY', icon='bolt', on_click=generate_ai).classes('mt-8 bg-[#32D74B] text-black font-black py-3 px-8 rounded-full shadow-[0_0_20px_rgba(50,215,75,0.4)] hover:scale-105')
                 
                 elif mode == 'Sector Flow':
-                    # 🌟 Sector Rotation Flow UI
-                    ui.label('SECTOR ROTATION FLOW (MARKET TREND)').classes('text-lg font-black text-white tracking-widest absolute top-6 left-6 z-10')
+                    ui.label('REAL SECTOR ALLOCATION').classes('text-lg font-black text-white tracking-widest absolute top-6 left-6 z-10')
                     
-                    sectors = ['Technology', 'Healthcare', 'Financials', 'Energy', 'Consumer Discretionary']
-                    flows = [('Tech', 4.5), ('Healthcare', 1.2), ('Finance', -0.5), ('Energy', -2.3), ('Consumer', 0.8)]
+                    # 🌟 จัดกลุ่มตาม Sector ของจริง
+                    sector_totals = {}
+                    for a in assets_data:
+                        sec = a['sector']
+                        sector_totals[sec] = sector_totals.get(sec, 0) + a['value']
+                        
+                    s_names = list(sector_totals.keys())
+                    s_values = list(sector_totals.values())
                     
                     ui.echart({
                         'tooltip': {'trigger': 'axis', 'axisPointer': {'type': 'shadow'}},
-                        'grid': {'left': '15%', 'right': '10%', 'bottom': '15%', 'top': '25%'},
-                        'xAxis': {'type': 'value', 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}, 'axisLabel': {'color': '#8B949E'}},
-                        'yAxis': {'type': 'category', 'data': [f[0] for f in flows], 'axisLine': {'show': False}, 'axisLabel': {'color': '#fff', 'fontWeight': 'bold'}},
-                        'series': [
-                            {
-                                'name': 'Net Money Flow (%)',
-                                'type': 'bar',
-                                'data': [
-                                    {'value': f[1], 'itemStyle': {'color': '#32D74B' if f[1] > 0 else '#FF453A', 'borderRadius': [0,5,5,0] if f[1] > 0 else [5,0,0,5]}}
-                                    for f in flows
-                                ],
-                                'label': {'show': True, 'position': 'right', 'formatter': '{c}%', 'color': '#fff'}
-                            }
-                        ]
+                        'grid': {'left': '25%', 'right': '10%', 'bottom': '15%', 'top': '25%'},
+                        'xAxis': {'type': 'value', 'splitLine': {'lineStyle': {'color': '#1C2128'}}},
+                        'yAxis': {'type': 'category', 'data': s_names, 'axisLine': {'show': False}, 'axisLabel': {'color': '#fff', 'fontWeight': 'bold'}},
+                        'series': [{'name': 'Value ($)', 'type': 'bar', 'data': [{'value': v, 'itemStyle': {'color': '#32D74B', 'borderRadius': [0,5,5,0]}} for v in s_values]}]
                     }).classes('w-full h-full p-4 mt-6')
 
             with list_card:
                 with ui.row().classes('w-full bg-[#11141C] p-5 border-b border-gray-800 text-xs text-gray-500 font-bold tracking-widest justify-between'):
                     ui.label('ASSET')
-                    ui.label('ACTION' if mode == 'AI Rebalance' else 'VALUE')
+                    ui.label('VALUE')
 
                 with ui.column().classes('w-full p-3 overflow-y-auto custom-scrollbar gap-2'):
-                    if mode == 'Sector Flow':
-                        # โชว์รายชื่อ Sector ที่เงินไหลเข้า
-                        for name, flow in [('Tech', 4.5), ('Healthcare', 1.2), ('Consumer', 0.8)]:
-                            with ui.row().classes('w-full justify-between items-center p-4 bg-[#32D74B]/10 rounded-2xl border border-[#32D74B]/20'):
-                                with ui.row().classes('items-center gap-3'):
-                                    ui.icon('trending_up', size='sm').classes('text-[#32D74B]')
-                                    ui.label(name).classes('font-black text-white tracking-wide text-lg')
-                                ui.label(f"INFLOW").classes('text-[#32D74B] font-bold text-xs bg-[#32D74B]/20 px-2 py-1 rounded')
-                        for name, flow in [('Energy', -2.3), ('Finance', -0.5)]:
-                            with ui.row().classes('w-full justify-between items-center p-4 bg-[#FF453A]/10 rounded-2xl border border-[#FF453A]/20 mt-2'):
-                                with ui.row().classes('items-center gap-3'):
-                                    ui.icon('trending_down', size='sm').classes('text-[#FF453A]')
-                                    ui.label(name).classes('font-black text-white tracking-wide text-lg')
-                                ui.label(f"OUTFLOW").classes('text-[#FF453A] font-bold text-xs bg-[#FF453A]/20 px-2 py-1 rounded')
-                    else:
-                        for a in assets_data:
-                            with ui.row().classes('w-full justify-between items-center p-4 hover:bg-[#1C2128] rounded-2xl transition-colors border border-transparent hover:border-white/5'):
-                                with ui.row().classes('items-center gap-3'):
-                                    ui.element('div').classes('w-1.5 h-6 rounded-full bg-[#D0FD3E]')
-                                    ui.label(a['ticker']).classes('font-black text-white tracking-wide text-lg')
-                                
-                                if mode == 'AI Rebalance':
-                                    action = random.choice(['BUY MORE', 'TAKE PROFIT', 'HOLD'])
-                                    color = '#32D74B' if action == 'BUY MORE' else ('#FF453A' if action == 'TAKE PROFIT' else '#8B949E')
-                                    ui.label(action).style(f'color: {color}; font-size: 11px; font-weight: 900; letter-spacing: 1px; padding: 4px 8px; border-radius: 6px; background-color: {color}15;')
-                                else:
-                                    pct = (a['value'] / total_value) * 100 if total_value > 0 else 0
-                                    with ui.row().classes('gap-4 text-sm items-center'):
-                                        ui.label(f"${a['value']:,.0f}").classes('text-gray-300 font-bold')
-                                        ui.label(f"{pct:.1f}%").classes('text-white font-black w-14 text-right bg-white/10 py-1 rounded')
+                    for a in assets_data:
+                        with ui.row().classes('w-full justify-between items-center p-4 hover:bg-[#1C2128] rounded-2xl transition-colors border border-transparent hover:border-white/5'):
+                            with ui.column().classes('gap-0'):
+                                ui.label(a['ticker']).classes('font-black text-white tracking-wide text-lg')
+                                if mode == 'Sector Flow':
+                                    ui.label(a['sector']).classes('text-[10px] text-gray-500 font-bold uppercase')
+                            
+                            pct = (a['value'] / total_value) * 100 if total_value > 0 else 0
+                            with ui.row().classes('gap-4 text-sm items-center'):
+                                ui.label(f"${a['value']:,.0f}").classes('text-gray-300 font-bold')
+                                ui.label(f"{pct:.1f}%").classes('text-white font-black w-14 text-right bg-white/10 py-1 rounded')
 
         mode_toggle.on('update:model-value', lambda e: ui.timer(0.1, update_view, once=True))
         

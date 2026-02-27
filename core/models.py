@@ -33,7 +33,7 @@ def get_db_connection():
     finally:
         if conn:
             if db_pool:
-                db_pool.putconn(conn) # 🌟 ใช้เสร็จเอาไปคืนในบ่อให้คนอื่นใช้ต่อ
+                db_pool.putconn(conn)
             else:
                 conn.close()
 
@@ -41,8 +41,8 @@ def get_user_by_telegram(telegram_id: int):
     try:
         with get_db_connection() as conn:
             c = conn.cursor()
-            # 🌟 ถอด username ออก เพื่อไม่ให้เกิด Error column does not exist
-            c.execute("SELECT user_id, status, role, expiry_date FROM users WHERE user_id = %s", (str(telegram_id),))
+            # 🌟 ดึง username ออกมาด้วย
+            c.execute("SELECT user_id, status, role, expiry_date, username FROM users WHERE user_id = %s", (str(telegram_id),))
             row = c.fetchone()
             c.close()
             
@@ -50,12 +50,12 @@ def get_user_by_telegram(telegram_id: int):
             expiry = row[3]
             expiry_str = expiry.strftime('%d/%m/%Y') if isinstance(expiry, datetime) else str(expiry) if expiry else None
             
-            # 🌟 สร้างชื่อจำลองจาก 4 ตัวท้ายของ ID เหมือนเดิม
-            safe_username = f"User_{str(telegram_id)[-4:]}"
+            # 🌟 ถ้ามีชื่อใน DB ให้ใช้ชื่อจริง ถ้าไม่มีให้ใช้ User_XXXX
+            db_username = row[4] if len(row) > 4 and row[4] else f"User_{str(telegram_id)[-4:]}"
             
             return {
                 'user_id': row[0],
-                'username': safe_username, 
+                'username': db_username, 
                 'status': row[1] if row[1] else 'active',
                 'role': row[2] if row[2] else 'free',
                 'vip_expiry': expiry_str 
@@ -69,7 +69,8 @@ def get_portfolio(user_id: str):
     try:
         with get_db_connection() as conn:
             c = conn.cursor()
-            c.execute("SELECT ticker, shares, avg_cost, asset_group FROM portfolios WHERE user_id = %s", (str(user_id),))
+            # ดึงข้อมูลมาให้ครบ รวมถึง Group และ Alert Price
+            c.execute("SELECT ticker, shares, avg_cost, asset_group, alert_price FROM portfolios WHERE user_id = %s", (str(user_id),))
             rows = c.fetchall()
             c.close()
             
@@ -79,7 +80,8 @@ def get_portfolio(user_id: str):
                 'ticker': row[0],
                 'shares': float(row[1]),
                 'avg_cost': float(row[2]),
-                'asset_group': row[3] if len(row) > 3 else 'ALL'
+                'asset_group': row[3] if len(row) > 3 and row[3] else 'ALL',
+                'alert_price': float(row[4]) if len(row) > 4 and row[4] else 0.0
             })
         return portfolio
     except Exception as e:
@@ -87,7 +89,6 @@ def get_portfolio(user_id: str):
         return []
 
 def get_all_unique_tickers():
-    """🌟 ดึงรายชื่อหุ้น 'ทั้งหมดที่มีในระบบ' โดยไม่ซ้ำกัน (สำหรับ Global Cache)"""
     try:
         with get_db_connection() as conn:
             c = conn.cursor()
@@ -116,8 +117,7 @@ def add_portfolio_stock(user_id: str, ticker: str, shares: float, avg_cost: floa
                 c.execute("UPDATE portfolios SET shares = %s, avg_cost = %s, asset_group = %s WHERE user_id = %s AND ticker = %s",
                           (new_shares, new_avg_cost, asset_group, str(user_id), ticker))
             else:
-                # 🌟 บันทึก Group ลงฐานข้อมูลด้วย
-                c.execute("INSERT INTO portfolios (user_id, ticker, shares, avg_cost, asset_group) VALUES (%s, %s, %s, %s, %s)",
+                c.execute("INSERT INTO portfolios (user_id, ticker, shares, avg_cost, asset_group, alert_price) VALUES (%s, %s, %s, %s, %s, 0)",
                           (str(user_id), ticker, float(shares), float(avg_cost), asset_group))
             conn.commit()
             c.close()
@@ -125,12 +125,16 @@ def add_portfolio_stock(user_id: str, ticker: str, shares: float, avg_cost: floa
     except Exception as e:
         print(f"❌ DB Error (add_portfolio_stock): {e}")
         return False
-def update_portfolio_stock(user_id: str, ticker: str, shares: float, avg_cost: float, asset_group: str = 'ALL'):
+
+def update_portfolio_stock(user_id: str, ticker: str, shares: float, avg_cost: float, asset_group: str = 'ALL', alert_price: float = 0.0):
     try:
         with get_db_connection() as conn:
             c = conn.cursor()
-            c.execute("UPDATE portfolios SET shares = %s, avg_cost = %s, asset_group = %s WHERE user_id = %s AND ticker = %s",
-                      (float(shares), float(avg_cost), asset_group, str(user_id), ticker.upper()))
+            c.execute("""
+                UPDATE portfolios 
+                SET shares = %s, avg_cost = %s, asset_group = %s, alert_price = %s 
+                WHERE user_id = %s AND ticker = %s
+            """, (float(shares), float(avg_cost), asset_group, float(alert_price), str(user_id), ticker.upper()))
             conn.commit()
             c.close()
         return True
@@ -149,3 +153,25 @@ def delete_portfolio_stock(user_id: str, ticker: str):
     except Exception as e:
         print(f"❌ DB Error (delete_portfolio): {e}")
         return False
+
+def get_all_active_alerts():
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT user_id, ticker, alert_price FROM portfolios WHERE alert_price > 0")
+            rows = c.fetchall()
+            c.close()
+        return [{"user_id": r[0], "ticker": r[1], "alert_price": float(r[2])} for r in rows]
+    except Exception as e:
+        print(f"❌ DB Error (get_all_active_alerts): {e}")
+        return []
+
+def clear_stock_alert(user_id: str, ticker: str):
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("UPDATE portfolios SET alert_price = 0 WHERE user_id = %s AND ticker = %s", (str(user_id), ticker.upper()))
+            conn.commit()
+            c.close()
+    except Exception as e:
+        pass
