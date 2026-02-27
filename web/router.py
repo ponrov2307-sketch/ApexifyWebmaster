@@ -1,5 +1,7 @@
 from nicegui import ui
 from web.auth import logout, require_login
+from functools import wraps
+import inspect
 
 def create_header():
     """สร้างแถบเมนูด้านบนของเว็บไซต์ (Navigation Bar)"""
@@ -12,7 +14,7 @@ def create_header():
 
         # เมนูทางขวา
         with ui.row().classes('items-center gap-6 text-sm font-bold'):
-            # 🌟 เพิ่มลิงก์กลับไปหน้าเพจหลัก (Vercel) ตรงนี้ครับ!
+            # ลิงก์กลับไปหน้าเพจหลัก (Vercel)
             ui.link('MAIN SITE', 'https://apexify-bot.vercel.app/?hl=th-TH').classes('text-gray-400 hover:text-[#D0FD3E] no-underline transition-colors')
             
             ui.link('DASHBOARD', '/').classes('text-white hover:text-[#D0FD3E] no-underline transition-colors')
@@ -24,16 +26,20 @@ def create_header():
 
 def standard_page_frame(content_func):
     """Wrapper สำหรับสร้างโครงสร้างมาตรฐานให้ทุกหน้าเว็บ"""
-    def wrapper(*args, **kwargs):
+    
+    @wraps(content_func)
+    async def wrapper(*args, **kwargs):
         # เช็คสิทธิ์ก่อนเรนเดอร์เนื้อหาหน้าเว็บ
         if not require_login():
             return
             
-        # วาด Header เสมอ
+        # วาด Header เมนูหลัก
         create_header()
         
-        # คืนค่าเนื้อหาหลักของหน้านั้นๆ (ที่ถูกหุ้มอยู่)
-        with ui.column().classes('w-full min-h-screen bg-[#0D1117]'):
-            content_func(*args, **kwargs)
+        # 🌟 FIX: ปลดบล็อก ui.column() ออกไป เพื่อให้ Ticker สามารถสร้าง ui.header() ได้อย่างอิสระ
+        if inspect.iscoroutinefunction(content_func):
+            return await content_func(*args, **kwargs)
+        else:
+            return content_func(*args, **kwargs)
             
     return wrapper

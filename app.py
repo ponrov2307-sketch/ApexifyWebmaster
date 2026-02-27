@@ -14,6 +14,7 @@ from services.news_fetcher import fetch_stock_news_summary
 # นำเข้า Database และ Auth
 from core.models import get_portfolio, update_portfolio_stock, delete_portfolio_stock
 from web.auth import login_page, require_login, logout
+from web.router import standard_page_frame
 standard_page_frame
 # --- ตั้งค่าหน้าเว็บ ---
 def apply_global_style():

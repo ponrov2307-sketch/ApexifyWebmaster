@@ -1,66 +1,79 @@
-"""
-⚠️ วิธีการสร้างตารางใน Supabase:
-1. เข้าไปที่เว็บ Supabase -> โปรเจกต์ของคุณ -> เมนู SQL Editor
-2. ก๊อปปี้คำสั่ง SQL ด้านล่างนี้ไปรัน เพื่อสร้างตารางทั้งหมดในคลิกเดียว
+import os
+import psycopg2
+from dotenv import load_dotenv
 
---- ก๊อปปี้ตั้งแต่บรรทัดนี้ไปรันใน Supabase ---
-CREATE TABLE apex_users (
-    id SERIAL PRIMARY KEY,
-    telegram_id BIGINT UNIQUE,
-    username TEXT,
-    is_vip BOOLEAN DEFAULT FALSE,
-    vip_expiry TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+# โหลดตัวแปรจากไฟล์ .env (ให้แน่ใจว่าในไฟล์ .env มี DATABASE_URL ของคุณอยู่)
+load_dotenv()
 
-CREATE TABLE apex_portfolios (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES apex_users(id) ON DELETE CASCADE,
-    ticker TEXT NOT NULL,
-    shares NUMERIC NOT NULL,
-    avg_cost NUMERIC NOT NULL,
-    asset_group TEXT DEFAULT 'ALL',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+DB_URL = os.getenv("DATABASE_URL")
 
-CREATE TABLE apex_portfolio_history (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES apex_users(id) ON DELETE CASCADE,
-    record_date DATE NOT NULL,
-    total_value NUMERIC NOT NULL,
-    UNIQUE(user_id, record_date)
-);
---- สิ้นสุดคำสั่ง SQL ---
-"""
-
-from core.database import db
-
-# --- ฟังก์ชันตัวช่วยดึงข้อมูล (Helper Functions) ---
+def get_connection():
+    """เชื่อมต่อกับ PostgreSQL (ฐานข้อมูลเดียวกับบอทหลัก)"""
+    if not DB_URL:
+        print("❌ Error: ไม่พบ DATABASE_URL ในไฟล์ .env")
+    return psycopg2.connect(DB_URL)
 
 def get_user_by_telegram(telegram_id: int):
-    """ดึงข้อมูลลูกค้าจาก Telegram ID (อ้างอิงจากคอลัมน์ user_id ในตารางบอทหลัก)"""
-    if not db: return None
-    # แปลงเป็น str เพราะในตารางบอทหลักเก็บ user_id เป็น TEXT
-    res = db.table('users').select('*').eq('user_id', str(telegram_id)).execute()
-    return res.data[0] if res.data else None
+    """ดึงข้อมูลลูกค้าจาก Telegram ID"""
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT user_id, status, role FROM users WHERE user_id = %s", (str(telegram_id),))
+        row = c.fetchone()
+        conn.close()
+        
+        if row:
+            return {'user_id': row[0], 'status': row[1], 'role': row[2]}
+        return None
+    except Exception as e:
+        print(f"❌ DB Error (get_user_by_telegram): {e}")
+        return None
 
 def get_portfolio(user_id: str):
-    """ดึงพอร์ตหุ้นทั้งหมดของลูกค้ารายนั้นจากตาราง portfolios"""
-    if not db: return []
-    res = db.table('portfolios').select('*').eq('user_id', str(user_id)).execute()
-    return res.data
+    """ดึงพอร์ตหุ้นทั้งหมดของลูกค้ารายนั้น"""
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT ticker, shares, avg_cost FROM portfolios WHERE user_id = %s", (str(user_id),))
+        rows = c.fetchall()
+        conn.close()
+        
+        portfolio = []
+        for row in rows:
+            portfolio.append({
+                'ticker': row[0],
+                'shares': float(row[1]),
+                'avg_cost': float(row[2])
+            })
+        return portfolio
+    except Exception as e:
+        print(f"❌ DB Error (get_portfolio): {e}")
+        return []
 
 def update_portfolio_stock(user_id: str, ticker: str, shares: float, avg_cost: float):
     """แก้ไขข้อมูลจำนวนหุ้นและราคาต้นทุน"""
-    if not db: return False
-    res = db.table('portfolios').update({
-        'shares': float(shares), 
-        'avg_cost': float(avg_cost)
-    }).eq('user_id', str(user_id)).eq('ticker', ticker.upper()).execute()
-    return bool(res.data)
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE portfolios SET shares = %s, avg_cost = %s WHERE user_id = %s AND ticker = %s",
+                  (float(shares), float(avg_cost), str(user_id), ticker.upper()))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"❌ DB Error (update_portfolio_stock): {e}")
+        return False
 
 def delete_portfolio_stock(user_id: str, ticker: str):
     """ลบหุ้นออกจากพอร์ต"""
-    if not db: return False
-    res = db.table('portfolios').delete().eq('user_id', str(user_id)).eq('ticker', ticker.upper()).execute()
-    return bool(res.data)
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("DELETE FROM portfolios WHERE user_id = %s AND ticker = %s",
+                  (str(user_id), ticker.upper()))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"❌ DB Error (delete_portfolio_stock): {e}")
+        return False

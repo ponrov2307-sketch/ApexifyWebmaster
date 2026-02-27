@@ -24,10 +24,11 @@ def login_page():
                     app.storage.user['telegram_id'] = str(tid)
                     app.storage.user['user_id'] = user['user_id']
                     
-                    # ดึงสถานะ VIP/PRO มาจากฐานข้อมูลบอทหลัก
-                    role = user.get('role', 'free').upper()
+                    # 🌟 FIX: ป้องกัน KeyError โดยเช็คค่า role อย่างปลอดภัย
+                    role = user.get('role', 'free')
+                    role_str = role.upper() if role else "FREE"
                     
-                    ui.notify(f'เข้าสู่ระบบสำเร็จ! (สถานะ: {role})', type='positive')
+                    ui.notify(f'เข้าสู่ระบบสำเร็จ! (สถานะ: {role_str})', type='positive')
                     ui.navigate.to('/') # พาไปหน้า Dashboard
                 else:
                     ui.notify('ไม่พบ Telegram ID นี้ กรุณาพิมพ์ /start ในบอทก่อนครับ', type='negative')
