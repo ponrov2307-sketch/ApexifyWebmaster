@@ -111,7 +111,6 @@ async def handle_edit(ticker):
     asset = next((a for a in portfolio if a['ticker'] == ticker), None)
     if not asset: return
 
-    # ดึงราคาปัจจุบัน และคำนวณแนวรับแนวต้านทันที
     current_price = get_live_price(ticker)
     from services.yahoo_finance import get_support_resistance
     support, resistance = get_support_resistance(ticker)
@@ -119,7 +118,8 @@ async def handle_edit(ticker):
     saved_alert = float(asset.get('alert_price', 0))
     default_alert = saved_alert if saved_alert > 0 else current_price * 0.95
 
-    with ui.dialog() as dialog, ui.card().classes('w-[450px] bg-[#0D1117]/90 backdrop-blur-2xl border border-white/10 p-0 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]'):
+    # 🌟 1. จุดแก้ปัญหา: เติม .props('no-refocus') ลงไปตรงนี้! เพื่อตัดวงจรการกระชากหน้าจอกลับ
+    with ui.dialog().props('no-refocus') as dialog, ui.card().classes('w-[450px] bg-[#0D1117]/90 backdrop-blur-2xl border border-white/10 p-0 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]'):
         with ui.row().classes('w-full bg-gradient-to-r from-[#161B22] to-[#1C2128] p-5 border-b border-white/5 justify-between items-center'):
             with ui.row().classes('items-center gap-3'):
                 ui.icon('tune', size='sm').classes('text-[#D0FD3E]')
@@ -127,7 +127,6 @@ async def handle_edit(ticker):
             ui.button(icon='close', on_click=dialog.close).props('flat dense round').classes('text-gray-500 hover:text-[#FF453A] transition-colors')
         
         with ui.column().classes('p-6 w-full gap-5'):
-            # 🌟 แสดงราคาปัจจุบัน พร้อมแนวรับ-แนวต้านเล็กๆ
             with ui.row().classes('w-full justify-between items-center bg-[#11141C]/50 p-4 rounded-2xl border border-white/5 shadow-inner'):
                 with ui.column().classes('gap-0'):
                     ui.label(ticker).classes('text-2xl font-black text-white tracking-wider')
@@ -151,7 +150,6 @@ async def handle_edit(ticker):
 
             with ui.row().classes('w-full gap-4 items-end'):
                 with ui.column().classes('flex-[1.5] gap-1'):
-                    # 🌟 ช่อง Alert พร้อมปุ่ม Auto Support
                     with ui.row().classes('w-full justify-between items-center'):
                         ui.label('Price Alert').classes('text-xs text-gray-400 font-bold tracking-wider')
                         if support > 0:
@@ -164,19 +162,16 @@ async def handle_edit(ticker):
                     asset_group_select = ui.select(['ALL', 'DCA', 'DIV', 'TRADING'], value=asset.get('asset_group', 'ALL')).classes('w-full').props('outlined dark rounded')
 
             def save_edit():
-                # 🌟 ส่งค่า alert_input.value ไปอัปเดตด้วย
                 if update_portfolio_stock(user_id, ticker, shares_input.value, cost_input.value, asset_group_select.value, alert_input.value):
                     ui.notify(f'✅ บันทึกข้อมูลและแจ้งเตือน {ticker} สำเร็จ!', type='positive')
-                    dialog.close()
-                    # 🌟 สั่งลบความจำการเลื่อนหน้าจอของเบราว์เซอร์ทิ้ง แล้วค่อยรีโหลด!
-                    ui.run_javascript('history.scrollRestoration = "manual"; window.scrollTo(0, 0); setTimeout(() => location.reload(), 100);')
+                    # 🌟 ไม้ตายที่ 2: ไม่สั่ง dialog.close() เพื่อไม่ให้มันกระชากหน้าจอ! สั่งวาร์ปโหลดหน้าใหม่ทับไปเลย
+                    ui.run_javascript('window.scrollTo(0, 0); setTimeout(() => { window.location.href = "/"; }, 200);')
 
             def confirm_delete():
                 if delete_portfolio_stock(user_id, ticker):
                     ui.notify(f'🗑️ ลบ {ticker} ออกจากพอร์ตแล้ว', type='warning')
-                    dialog.close()
-                    # 🌟 สั่งลบความจำการเลื่อนหน้าจอของเบราว์เซอร์ทิ้ง แล้วค่อยรีโหลด!
-                    ui.run_javascript('history.scrollRestoration = "manual"; window.scrollTo(0, 0); setTimeout(() => location.reload(), 100);')
+                    # 🌟 ไม่สั่ง dialog.close() เช่นกัน
+                    ui.run_javascript('window.scrollTo(0, 0); setTimeout(() => { window.location.href = "/"; }, 200);')
 
             with ui.row().classes('w-full gap-4 mt-2'):
                 ui.button('DELETE', on_click=confirm_delete).classes('flex-1 bg-transparent text-[#FF453A] border border-[#FF453A]/30 font-black py-3 rounded-xl hover:bg-[#FF453A] hover:text-white transition-all')
@@ -276,7 +271,11 @@ def login_route():
 @standard_page_frame
 async def main_page():
     ui.query('body').style(f'background-color: {COLORS.get("bg", "#0D1117")}; font-family: "Inter", sans-serif;')
-    create_ticker() 
+    
+    # 🌟 ไม้ตายที่ 1: บังคับให้หน้าหลักถูกดึงขึ้นบนสุดเสมอ ทุกครั้งที่เปิดหรือรีโหลด!
+    ui.run_javascript('setTimeout(() => window.scrollTo(0, 0), 100);')
+    
+    create_ticker()
 
     @ui.refreshable
     def dashboard_content():
