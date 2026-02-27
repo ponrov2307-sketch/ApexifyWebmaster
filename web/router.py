@@ -12,6 +12,9 @@ def create_header():
 
         # เมนูทางขวา
         with ui.row().classes('items-center gap-6 text-sm font-bold'):
+            # 🌟 เพิ่มลิงก์กลับไปหน้าเพจหลัก (Vercel) ตรงนี้ครับ!
+            ui.link('MAIN SITE', 'https://apexify-bot.vercel.app/?hl=th-TH').classes('text-gray-400 hover:text-[#D0FD3E] no-underline transition-colors')
+            
             ui.link('DASHBOARD', '/').classes('text-white hover:text-[#D0FD3E] no-underline transition-colors')
             ui.link('VIP UPGRADE', 'https://t.me/ApexifyBot').classes('text-gray-400 hover:text-white no-underline transition-colors') # ลิงก์ไปหาบอท
             
