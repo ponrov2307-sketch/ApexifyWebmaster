@@ -49,3 +49,18 @@ def get_portfolio(user_id: str):
     if not db: return []
     res = db.table('portfolios').select('*').eq('user_id', str(user_id)).execute()
     return res.data
+
+def update_portfolio_stock(user_id: str, ticker: str, shares: float, avg_cost: float):
+    """แก้ไขข้อมูลจำนวนหุ้นและราคาต้นทุน"""
+    if not db: return False
+    res = db.table('portfolios').update({
+        'shares': float(shares), 
+        'avg_cost': float(avg_cost)
+    }).eq('user_id', str(user_id)).eq('ticker', ticker.upper()).execute()
+    return bool(res.data)
+
+def delete_portfolio_stock(user_id: str, ticker: str):
+    """ลบหุ้นออกจากพอร์ต"""
+    if not db: return False
+    res = db.table('portfolios').delete().eq('user_id', str(user_id)).eq('ticker', ticker.upper()).execute()
+    return bool(res.data)
