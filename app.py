@@ -1,7 +1,7 @@
 from nicegui import ui, app, run
 from core.config import COLORS
 
-# นำเข้าชิ้นส่วน UI ที่เราสร้างไว้
+# นำเข้าชิ้นส่วน UI สุดล้ำของคุณ
 from web.components.ticker import create_ticker
 from web.components.stats import create_stats_cards
 from web.components.table import create_portfolio_table
@@ -18,7 +18,7 @@ from web.auth import login_page, require_login, logout
 # --- ตั้งค่าหน้าเว็บ ---
 def apply_global_style():
     """ตั้งค่า CSS พื้นฐานและ Font"""
-    ui.query('body').style(f'background-color: {COLORS["bg"]}; font-family: "Inter", sans-serif;')
+    ui.query('body').style(f'background-color: {COLORS.get("bg", "#0D1117")}; font-family: "Inter", sans-serif;')
     ui.add_head_html('<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">')
 
 # --- ฟังก์ชันจัดการปุ่มกด (Callbacks) ---
@@ -73,7 +73,7 @@ async def handle_news(ticker):
     
     dialog.open()
     
-    # รันฟังก์ชันดึงข่าวเป็น Background Task จะได้ไม่ทำให้หน้าเว็บค้าง
+    # รันฟังก์ชันดึงข่าว AI เป็น Background Task
     summary = await run.io_bound(fetch_stock_news_summary, ticker)
     
     loading_spinner.delete()
@@ -81,7 +81,7 @@ async def handle_news(ticker):
         ui.markdown(summary).classes('text-gray-200 leading-relaxed text-sm')
 
 async def handle_chart(ticker):
-    ui.notify(f'Loading Chart for {ticker}...', color='positive')
+    # เรียกใช้ Modal ขั้นเทพที่คุณเขียนไว้ใน charts.py
     await show_candlestick_chart(ticker)
 
 # --- หน้า Login ---
@@ -93,18 +93,16 @@ def login_route():
 # --- หน้าหลัก (Dashboard) ---
 @ui.page('/')
 async def main_page():
-    # ตรวจสอบว่า Login หรือยัง ถ้ายังให้เด้งไปหน้า /login
     if not require_login():
         return
         
     apply_global_style()
     
-    # 1. ส่วนหัว Ticker (วิ่งตลอดเวลา)
+    # 1. แถบ Ticker วิ่งๆ (กระจกฝ้าของคุณ)
     create_ticker()
 
-    with ui.column().classes('w-full max-w-7xl mx-auto p-6 gap-8'):
+    with ui.column().classes('w-full max-w-7xl mx-auto p-6 gap-8 pt-12'): # เพิ่ม pt-12 หลบแถบ Ticker
         
-        # 2. หัวข้อใหญ่ + ปุ่ม Add Asset / Logout
         with ui.row().classes('w-full justify-between items-end mt-4'):
             with ui.column().classes('gap-0'):
                 ui.label('APEX WEALTH MASTER').classes('text-5xl font-black italic text-[#D0FD3E] tracking-tighter shadow-neon')
@@ -113,14 +111,11 @@ async def main_page():
             with ui.row().classes('gap-4'):
                 ui.button('LOGOUT', icon='logout', on_click=logout) \
                     .classes('bg-[#FF453A] text-white font-black rounded-full px-6 hover:bg-red-700 transition-colors')
-                ui.button('ADD ASSET', icon='add', on_click=lambda: ui.notify('ใช้ Telegram Bot พิมพ์ /add เพื่อเพิ่มหุ้นนะครับ', type='info')) \
-                    .classes('bg-white text-black font-black rounded-full px-6 hover:bg-[#D0FD3E] transition-colors')
 
-        # 3. ดึงข้อมูลจากฐานข้อมูลจริง (Supabase)
+        # ดึงข้อมูลจากฐานข้อมูลจริง
         user_id = app.storage.user.get('user_id')
         raw_portfolio = get_portfolio(user_id)
         
-        # แปลงข้อมูลจาก DB ให้เข้ากับโครงสร้างที่ตารางต้องการ
         assets = []
         for item in raw_portfolio:
             assets.append({
@@ -128,15 +123,14 @@ async def main_page():
                 'shares': float(item['shares']),
                 'avg_cost': float(item['avg_cost']),
                 'last_price': 0,
-                'sparkline': []
+                'sparkline': [],
+                'is_up': True
             })
 
-        # โหลดข้อมูลจริง (ราคา + กราฟเส้นจิ๋ว)
         total_invested = 0
-        current_value = 0
+        net_worth = 0 # 🌟 เปลี่ยนมาใช้ตัวแปร net_worth ให้ตรงกับ stats.py ของคุณ
 
         for asset in assets:
-            # ดึงราคาและ Sparkline จริงจาก Yahoo Finance
             price = get_live_price(asset['ticker'])
             spark, is_up = get_sparkline_data(asset['ticker'])
             
@@ -145,14 +139,14 @@ async def main_page():
             asset['is_up'] = is_up
             
             total_invested += asset['shares'] * asset['avg_cost']
-            current_value += asset['shares'] * price
+            net_worth += asset['shares'] * price
 
-        total_profit = current_value - total_invested
+        total_profit = net_worth - total_invested
 
-        # 4. แสดงการ์ดสรุปผล (Stats)
-        create_stats_cards(total_invested, current_value, total_profit)
+        # 2. แสดงการ์ดสรุปผล (Stats) แบบเรืองแสง
+        create_stats_cards(total_invested, net_worth, total_profit)
 
-        # 5. แสดงตารางหุ้น (Table)
+        # 3. แสดงตารางหุ้น (Table) ที่มี ECharts ฝังอยู่
         create_portfolio_table(
             assets, 
             on_edit=handle_edit, 
@@ -163,9 +157,9 @@ async def main_page():
 # --- เริ่มต้นระบบ ---
 if __name__ in {"__main__", "__mp_main__"}:
     try:
-        app.add_static_files('/static', 'static') # เผื่อใส่รูปโลโก้
+        app.add_static_files('/static', 'static')
     except ValueError:
-        pass # ป้องกัน Error กรณีไม่มีโฟลเดอร์ static ในเครื่อง
+        pass 
         
     ui.run(
         title='Apex Wealth Master',
@@ -173,5 +167,5 @@ if __name__ in {"__main__", "__mp_main__"}:
         dark=True,
         port=8080,
         reload=True,
-        storage_secret='apex_super_secret_key_2026' # ⚠️ จำเป็นต้องมีบรรทัดนี้เพื่อเปิดใช้งานระบบ Login (Storage)
+        storage_secret='apex_super_secret_key_2026'
     )
