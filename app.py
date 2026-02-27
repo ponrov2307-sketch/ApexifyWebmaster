@@ -60,10 +60,10 @@ async def main_page():
             with ui.row().classes('gap-4'):
                 ui.button('LOGOUT', icon='logout', on_click=logout) \
                     .classes('bg-[#FF453A] text-white font-black rounded-full px-6 hover:bg-red-700 transition-colors')
-                ui.button('ADD ASSET', icon='add', on_click=lambda: ui.notify('ใช้ Telegram Bot เพื่อเพิ่มหุ้นนะครับ', type='info')) \
+                ui.button('ADD ASSET', icon='add', on_click=lambda: ui.notify('ใช้ Telegram Bot พิมพ์ /add เพื่อเพิ่มหุ้นนะครับ', type='info')) \
                     .classes('bg-white text-black font-black rounded-full px-6 hover:bg-[#D0FD3E] transition-colors')
 
-        # 3. ดึงข้อมูลจากฐานข้อมูลจริง (Supabase) แทน mock_assets
+        # 3. ดึงข้อมูลจากฐานข้อมูลจริง (Supabase)
         user_id = app.storage.user.get('user_id')
         raw_portfolio = get_portfolio(user_id)
         
@@ -109,7 +109,11 @@ async def main_page():
 
 # --- เริ่มต้นระบบ ---
 if __name__ in {"__main__", "__mp_main__"}:
-    app.add_static_files('/static', 'static') # เผื่อใส่รูปโลโก้
+    try:
+        app.add_static_files('/static', 'static') # เผื่อใส่รูปโลโก้
+    except ValueError:
+        pass # ป้องกัน Error กรณีไม่มีโฟลเดอร์ static ในเครื่อง
+        
     ui.run(
         title='Apex Wealth Master',
         favicon='🚀',
