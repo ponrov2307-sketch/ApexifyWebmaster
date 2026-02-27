@@ -1,4 +1,4 @@
-from nicegui import ui, app
+from nicegui import ui, app, run
 from core.config import COLORS
 
 # นำเข้าชิ้นส่วน UI ที่เราสร้างไว้
@@ -9,9 +9,10 @@ from web.components.charts import show_candlestick_chart
 
 # นำเข้าบริการดึงข้อมูล
 from services.yahoo_finance import get_sparkline_data, get_live_price
+from services.news_fetcher import fetch_stock_news_summary
 
 # นำเข้า Database และ Auth
-from core.models import get_portfolio
+from core.models import get_portfolio, update_portfolio_stock, delete_portfolio_stock
 from web.auth import login_page, require_login, logout
 
 # --- ตั้งค่าหน้าเว็บ ---
@@ -21,11 +22,63 @@ def apply_global_style():
     ui.add_head_html('<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">')
 
 # --- ฟังก์ชันจัดการปุ่มกด (Callbacks) ---
-def handle_edit(ticker):
-    ui.notify(f'Edit Stock: {ticker} (ฟังก์ชันนี้จะเชื่อมกับ DB เร็วๆ นี้)', type='info')
+async def handle_edit(ticker):
+    user_id = app.storage.user.get('user_id')
+    portfolio = get_portfolio(user_id)
+    asset = next((a for a in portfolio if a['ticker'] == ticker), None)
+    
+    if not asset: 
+        ui.notify('ไม่พบข้อมูลหุ้นนี้ในพอร์ต', type='negative')
+        return
 
-def handle_news(ticker):
-    ui.notify(f'Fetching News for {ticker}... (Coming Soon)', type='warning')
+    with ui.dialog() as dialog, ui.card().classes('w-96 bg-[#161B22] border border-gray-800 p-6 rounded-xl shadow-xl'):
+        ui.label(f'✏️ แก้ไขข้อมูลพอร์ต: {ticker}').classes('text-xl font-bold text-white mb-4')
+        
+        shares_input = ui.number('จำนวนหุ้น', value=float(asset['shares']), format='%.4f').classes('w-full mb-4').props('outlined dark step=0.01')
+        cost_input = ui.number('ราคาต้นทุนเฉลี่ย', value=float(asset['avg_cost']), format='%.2f').classes('w-full mb-6').props('outlined dark step=0.01')
+        
+        def save_edit():
+            if update_portfolio_stock(user_id, ticker, shares_input.value, cost_input.value):
+                ui.notify(f'✅ บันทึกข้อมูล {ticker} เรียบร้อย!', type='positive')
+                dialog.close()
+                ui.navigate.reload() # รีเฟรชหน้าเว็บให้ข้อมูลอัปเดต
+            else:
+                ui.notify('❌ เกิดข้อผิดพลาดในการบันทึกข้อมูล', type='negative')
+                
+        def delete_asset():
+            if delete_portfolio_stock(user_id, ticker):
+                ui.notify(f'🗑️ ลบ {ticker} ออกจากพอร์ตแล้ว', type='warning')
+                dialog.close()
+                ui.navigate.reload()
+            else:
+                ui.notify('❌ เกิดข้อผิดพลาดในการลบข้อมูล', type='negative')
+        
+        with ui.row().classes('w-full justify-between mt-2'):
+            ui.button('ลบหุ้นนี้', on_click=delete_asset).classes('bg-red-500 text-white font-bold px-4 py-2 rounded-lg hover:bg-red-700')
+            with ui.row().classes('gap-2'):
+                ui.button('ยกเลิก', on_click=dialog.close).classes('bg-gray-600 text-white font-bold px-4 py-2 rounded-lg hover:bg-gray-500')
+                ui.button('บันทึก', on_click=save_edit).classes('bg-[#D0FD3E] text-black font-black px-4 py-2 rounded-lg hover:bg-[#b5e62b]')
+    
+    dialog.open()
+
+async def handle_news(ticker):
+    with ui.dialog() as dialog, ui.card().classes('w-[500px] max-w-full bg-[#161B22] border border-gray-800 p-6 rounded-xl shadow-xl'):
+        ui.label(f'📰 เจาะลึกข่าวล่าสุด: {ticker}').classes('text-xl font-bold text-[#D0FD3E] mb-2')
+        ui.label('ให้ AI ช่วยสรุปข่าวด่วนประจำสัปดาห์...').classes('text-gray-400 text-sm mb-4')
+        
+        loading_spinner = ui.spinner(size='lg', color='#D0FD3E').classes('mx-auto my-8')
+        news_container = ui.column().classes('w-full gap-2')
+        
+        ui.button('ปิดหน้าต่าง', on_click=dialog.close).classes('w-full mt-6 bg-gray-700 text-white font-bold rounded-lg py-2 hover:bg-gray-600')
+    
+    dialog.open()
+    
+    # รันฟังก์ชันดึงข่าวเป็น Background Task จะได้ไม่ทำให้หน้าเว็บค้าง
+    summary = await run.io_bound(fetch_stock_news_summary, ticker)
+    
+    loading_spinner.delete()
+    with news_container:
+        ui.markdown(summary).classes('text-gray-200 leading-relaxed text-sm')
 
 async def handle_chart(ticker):
     ui.notify(f'Loading Chart for {ticker}...', color='positive')
