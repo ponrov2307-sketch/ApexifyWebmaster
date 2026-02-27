@@ -17,16 +17,20 @@ def login_page():
             try:
                 tid = int(telegram_id_input.value)
                 user = get_user_by_telegram(tid)
+                
                 if user:
                     # เก็บสถานะการล็อคอินลงใน Storage ของ Browser
                     app.storage.user['authenticated'] = True
-                    app.storage.user['telegram_id'] = tid
-                    app.storage.user['user_id'] = user['id']
+                    app.storage.user['telegram_id'] = str(tid)
+                    app.storage.user['user_id'] = user['user_id']
                     
-                    ui.notify(f'ยินดีต้อนรับคุณ {user["username"]}', type='positive')
+                    # ดึงสถานะ VIP/PRO มาจากฐานข้อมูลบอทหลัก
+                    role = user.get('role', 'free').upper()
+                    
+                    ui.notify(f'เข้าสู่ระบบสำเร็จ! (สถานะ: {role})', type='positive')
                     ui.navigate.to('/') # พาไปหน้า Dashboard
                 else:
-                    ui.notify('ไม่พบ Telegram ID นี้ กรุณาพิมพ์ /start ในบอทก่อน', type='negative')
+                    ui.notify('ไม่พบ Telegram ID นี้ กรุณาพิมพ์ /start ในบอทก่อนครับ', type='negative')
             except ValueError:
                 ui.notify('Telegram ID ต้องเป็นตัวเลขเท่านั้น', type='negative')
 
