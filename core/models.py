@@ -2,35 +2,44 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
-# โหลดตัวแปรจากไฟล์ .env (ให้แน่ใจว่าในไฟล์ .env มี DATABASE_URL ของคุณอยู่)
+# โหลดตัวแปรจากไฟล์ .env
 load_dotenv()
 
+# ลิงก์ฐานข้อมูล (ใช้ลิงก์เดียวกับที่บอท Telegram ใช้เป๊ะ)
 DB_URL = os.getenv("DATABASE_URL")
 
 def get_connection():
-    """เชื่อมต่อกับ PostgreSQL (ฐานข้อมูลเดียวกับบอทหลัก)"""
+    """เชื่อมต่อกับ PostgreSQL โดยตรงด้วย SQL (วิธีเดียวกับบอท)"""
     if not DB_URL:
         print("❌ Error: ไม่พบ DATABASE_URL ในไฟล์ .env")
     return psycopg2.connect(DB_URL)
 
 def get_user_by_telegram(telegram_id: int):
-    """ดึงข้อมูลลูกค้าจาก Telegram ID"""
+    """ดึงข้อมูลลูกค้าจาก Telegram ID (ชี้เป้าตาราง users ของบอท)"""
     try:
         conn = get_connection()
         c = conn.cursor()
-        c.execute("SELECT user_id, status, role FROM users WHERE user_id = %s", (str(telegram_id),))
+        
+        # 🎯 ใช้ SQL ตรงๆ เหมือนไฟล์ database.py ของบอท
+        c.execute("SELECT user_id, status, role, expiry_date FROM users WHERE user_id = %s", (str(telegram_id),))
         row = c.fetchone()
         conn.close()
         
         if row:
-            return {'user_id': row[0], 'status': row[1], 'role': row[2]}
+            return {
+                'user_id': row[0],
+                'username': f"User_{str(telegram_id)[-4:]}", # บอทไม่มี username ใช้เลข ID แทน
+                'status': row[1] if row[1] else 'active',
+                'role': row[2] if row[2] else 'free',
+                'vip_expiry': row[3] # ดึงจากคอลัมน์ expiry_date ของบอทเก่า
+            }
         return None
     except Exception as e:
         print(f"❌ DB Error (get_user_by_telegram): {e}")
         return None
 
 def get_portfolio(user_id: str):
-    """ดึงพอร์ตหุ้นทั้งหมดของลูกค้ารายนั้น"""
+    """ดึงพอร์ตหุ้น (จากตาราง portfolios)"""
     try:
         conn = get_connection()
         c = conn.cursor()
@@ -51,7 +60,7 @@ def get_portfolio(user_id: str):
         return []
 
 def update_portfolio_stock(user_id: str, ticker: str, shares: float, avg_cost: float):
-    """แก้ไขข้อมูลจำนวนหุ้นและราคาต้นทุน"""
+    """แก้ไขจำนวนหุ้นและต้นทุนผ่านเว็บ"""
     try:
         conn = get_connection()
         c = conn.cursor()
@@ -61,11 +70,11 @@ def update_portfolio_stock(user_id: str, ticker: str, shares: float, avg_cost: f
         conn.close()
         return True
     except Exception as e:
-        print(f"❌ DB Error (update_portfolio_stock): {e}")
+        print(f"❌ DB Error (update_portfolio): {e}")
         return False
 
 def delete_portfolio_stock(user_id: str, ticker: str):
-    """ลบหุ้นออกจากพอร์ต"""
+    """ลบหุ้นออกจากพอร์ตผ่านเว็บ"""
     try:
         conn = get_connection()
         c = conn.cursor()
@@ -75,5 +84,5 @@ def delete_portfolio_stock(user_id: str, ticker: str):
         conn.close()
         return True
     except Exception as e:
-        print(f"❌ DB Error (delete_portfolio_stock): {e}")
+        print(f"❌ DB Error (delete_portfolio): {e}")
         return False

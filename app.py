@@ -84,7 +84,36 @@ async def handle_news(ticker):
 async def handle_chart(ticker):
     # เรียกใช้ Modal ขั้นเทพที่คุณเขียนไว้ใน charts.py
     await show_candlestick_chart(ticker)
-
+def create_profile_card():
+    """สร้างการ์ดแสดงข้อมูลผู้ใช้งาน สถานะ VIP และวันหมดอายุ"""
+    from nicegui import app
+    from core.models import get_user_by_telegram
+    
+    # ดึงข้อมูลล่าสุดจาก Database เสมอเมื่อรีเฟรชหน้าเว็บ
+    user_id = app.storage.user.get('telegram_id')
+    user_info = get_user_by_telegram(user_id)
+    
+    if not user_info:
+        return
+        
+    role = str(user_info.get('role')).upper()
+    expiry = str(user_info.get('vip_expiry'))
+    
+    # จัดการกรณีที่วันหมดอายุเป็น NULL หรือไม่มีข้อมูล
+    if not expiry or expiry.upper() == 'NULL' or expiry == 'NONE':
+        expiry = 'ไม่มีแพ็กเกจ / ตลอดชีพ'
+        
+    # เปลี่ยนสีตัวหนังสือตามระดับ VIP
+    role_color = 'text-[#D0FD3E]' if role in ['VIP', 'PRO'] else 'text-gray-400'
+    
+    with ui.row().classes('w-full items-center justify-between bg-[#161B22] border border-gray-800 p-6 rounded-xl mb-6 mt-4'):
+        with ui.column().classes('gap-1'):
+            ui.label(f'👤 บัญชีผู้ใช้: {user_info.get("username")}').classes('text-lg font-bold text-white')
+            ui.label(f'🔑 Telegram ID: {user_id}').classes('text-sm text-gray-500')
+        
+        with ui.column().classes('gap-1 items-end'):
+            ui.label(f'สถานะ: {role}').classes(f'text-2xl font-black {role_color}')
+            ui.label(f'วันหมดอายุ: {expiry}').classes('text-sm text-[#FF453A]')
 # --- หน้า Login ---
 @ui.page('/login')
 def login_route():
@@ -97,7 +126,11 @@ def login_route():
 async def main_page():
         
     apply_global_style()
+    # 1. แถบ Ticker วิ่งๆ
+    create_ticker()
     
+    # 🌟 2. เพิ่มบรรทัดนี้ลงไป เพื่อให้กล่องสถานะโชว์บนหน้าเว็บ!
+    create_profile_card()
     # 1. แถบ Ticker วิ่งๆ (กระจกฝ้าของคุณ)
     create_ticker()
 
