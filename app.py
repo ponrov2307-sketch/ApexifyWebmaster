@@ -164,16 +164,19 @@ async def handle_edit(ticker):
                     asset_group_select = ui.select(['ALL', 'DCA', 'DIV', 'TRADING'], value=asset.get('asset_group', 'ALL')).classes('w-full').props('outlined dark rounded')
 
             def save_edit():
+                # 🌟 ส่งค่า alert_input.value ไปอัปเดตด้วย
                 if update_portfolio_stock(user_id, ticker, shares_input.value, cost_input.value, asset_group_select.value, alert_input.value):
                     ui.notify(f'✅ บันทึกข้อมูลและแจ้งเตือน {ticker} สำเร็จ!', type='positive')
                     dialog.close()
-                    ui.navigate.to('/') # 🌟 แก้ตรงนี้
+                    # 🌟 สั่งลบความจำการเลื่อนหน้าจอของเบราว์เซอร์ทิ้ง แล้วค่อยรีโหลด!
+                    ui.run_javascript('history.scrollRestoration = "manual"; window.scrollTo(0, 0); setTimeout(() => location.reload(), 100);')
 
             def confirm_delete():
                 if delete_portfolio_stock(user_id, ticker):
                     ui.notify(f'🗑️ ลบ {ticker} ออกจากพอร์ตแล้ว', type='warning')
                     dialog.close()
-                    ui.navigate.to('/') # 🌟 แก้ตรงนี้
+                    # 🌟 สั่งลบความจำการเลื่อนหน้าจอของเบราว์เซอร์ทิ้ง แล้วค่อยรีโหลด!
+                    ui.run_javascript('history.scrollRestoration = "manual"; window.scrollTo(0, 0); setTimeout(() => location.reload(), 100);')
 
             with ui.row().classes('w-full gap-4 mt-2'):
                 ui.button('DELETE', on_click=confirm_delete).classes('flex-1 bg-transparent text-[#FF453A] border border-[#FF453A]/30 font-black py-3 rounded-xl hover:bg-[#FF453A] hover:text-white transition-all')
