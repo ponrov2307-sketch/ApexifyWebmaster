@@ -14,7 +14,7 @@ from services.news_fetcher import fetch_stock_news_summary
 # นำเข้า Database และ Auth
 from core.models import get_portfolio, update_portfolio_stock, delete_portfolio_stock
 from web.auth import login_page, require_login, logout
-
+standard_page_frame
 # --- ตั้งค่าหน้าเว็บ ---
 def apply_global_style():
     """ตั้งค่า CSS พื้นฐานและ Font"""
@@ -92,9 +92,8 @@ def login_route():
 
 # --- หน้าหลัก (Dashboard) ---
 @ui.page('/')
+@standard_page_frame  # 🌟 1. วางแทรกตรงบรรทัดนี้เลยครับ!
 async def main_page():
-    if not require_login():
-        return
         
     apply_global_style()
     
