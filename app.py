@@ -1,5 +1,5 @@
 ﻿from nicegui import ui, app, run
-from core.config import COLORS
+from core.config import APP_HOST, APP_PORT, APP_RELOAD, APP_TITLE, COLORS, NICEGUI_STORAGE_SECRET
 import random
 import pandas as pd
 from datetime import datetime, UTC
@@ -2454,5 +2454,17 @@ async def macro_page(client):
 
 # สิ้นสุดไฟล์
 # ==========================================
+def run_web() -> None:
+    ui.run(
+        title=APP_TITLE,
+        favicon="🚀",
+        dark=True,
+        host=APP_HOST,
+        port=APP_PORT,
+        reload=APP_RELOAD,
+        storage_secret=NICEGUI_STORAGE_SECRET or None,
+    )
+
+
 if __name__ in {"__main__", "__mp_main__"}:
-    ui.run(title='Apex Wealth Master', favicon='🚀', dark=True, port=8080, reload=False, storage_secret='apex_super_secret_key_2026')
+    run_web()
