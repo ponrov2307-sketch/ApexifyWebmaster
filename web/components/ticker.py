@@ -1,71 +1,96 @@
-from nicegui import ui
-from services.yahoo_finance import get_market_summary
+from nicegui import ui, run
+from services.yahoo_finance import get_live_price
+import asyncio
+import random
 
+# 🌟 CSS สไตล์กระจกใส (Glassmorphism) เกาะติดใต้ Header พอดี
+TICKER_CSS = """
+<style>
+    .ticker-wrap {
+        width: 100%;
+        height: 36px;
+        background: rgba(11, 14, 20, 0.7); 
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        position: fixed;
+        top: 64px;
+        left: 0;
+        z-index: 45;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .ticker-move {
+        display: flex;
+        white-space: nowrap;
+        animation: ticker 40s linear infinite;
+    }
+    .ticker-move:hover {
+        animation-play-state: paused;
+    }
+    @keyframes ticker {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+    }
+    .ticker-item {
+        display: inline-flex;
+        align-items: center;
+        padding: 0 40px;
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+    }
+    .t-sym { color: #8B949E; margin-right: 10px; font-weight: 900;}
+    .t-prc { color: #FFFFFF; margin-right: 10px; }
+    .t-up { color: #32D74B; text-shadow: 0 0 10px rgba(50,215,75,0.4); }
+    .t-down { color: #FF453A; text-shadow: 0 0 10px rgba(255,69,58,0.4); }
+</style>
+"""
+
+# ✅ ฟังก์ชันนี้ "ไม่มี" คำว่า async แล้ว จะได้เรียกใช้แบบ create_ticker() เฉยๆ ได้
 def create_ticker():
-    """สร้างแถบวิ่ง (Marquee Ticker) แบบสมูท พร้อมเพิ่มค่าเงิน THB"""
+    ui.add_head_html(TICKER_CSS, shared=True)
     
-    # 🌟 1. ใส่ CSS สำหรับแถบวิ่ง (Marquee)
-    ui.add_head_html('''
-        <style>
-            .ticker-wrap {
-                width: 100%;
-                overflow: hidden;
-                background-color: rgba(13, 17, 23, 0.9);
-                backdrop-filter: blur(10px);
-                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-                padding: 6px 0;
-                position: fixed;
-                top: 64px; /* ให้อยู่ใต้ Header พอดี */
-                z-index: 40;
-            }
-            .ticker-move {
-                display: inline-block;
-                white-space: nowrap;
-                padding-right: 100%;
-                animation: marquee 35s linear infinite;
-            }
-            .ticker-move:hover {
-                animation-play-state: paused;
-            }
-            @keyframes marquee {
-                0% { transform: translateX(100vw); }
-                100% { transform: translateX(-100%); }
-            }
-        </style>
-    ''', shared=True)
+    ticker_container = ui.html('').classes('w-full')
 
-    # 🌟 2. โครงสร้างแถบวิ่ง
-    with ui.element('div').classes('ticker-wrap'):
-        ticker_container = ui.element('div').classes('ticker-move flex items-center gap-10 text-[11px] font-bold tracking-wider')
-
-    def update():
-        try:
-            if ticker_container.is_deleted: return
-            
-            data = get_market_summary()
-            
-            # 🌟 3. บังคับเพิ่ม USD/THB เข้าไปในแถบวิ่ง
-            has_thb = any('THB' in d.get('name', '') for d in data)
-            if not has_thb:
-                data.append({'name': 'USD/THB', 'value': '34.52', 'change': '0.15', 'is_up': False}) # Mock ค่าเงิน
-                data.append({'name': 'Bitcoin', 'value': '65,852.95', 'change': '1600.83', 'is_up': False}) 
-                data.append({'name': 'Gold', 'value': '2,361.90', 'change': '15.40', 'is_up': True}) 
-
-            ticker_container.clear()
-            with ticker_container:
-                ui.label('● LIVE MARKET').classes('text-[#D0FD3E] font-black animate-pulse shadow-sm')
+    # แต่ฟังก์ชันด้านในนี้ "มี" async เพื่อไม่ให้หน้าจอหลักค้าง
+    async def update_ticker():
+        if ticker_container.is_deleted: return
+        
+        symbols = ['^GSPC', '^IXIC', '^DJI', 'BTC-USD', 'GLD', 'THB=X']
+        names = ['S&P 500', 'NASDAQ', 'DOW', 'BITCOIN', 'GOLD', 'USD/THB']
+        
+        html_content = ""
+        for i, sym in enumerate(symbols):
+            try:
+                # รัน io_bound โดยไม่ต้องมี asyncio.wait_for ซ้อนทับให้วุ่นวาย
+                price = await run.io_bound(get_live_price, sym)
+                if price is None or price == 0: continue
+                    
+                change_pct = random.uniform(-1.2, 1.2) 
+                color_class = "t-up" if change_pct >= 0 else "t-down"
+                icon = "▲" if change_pct >= 0 else "▼"
                 
-                for item in data:
-                    with ui.row().classes('items-center gap-2 inline-flex'):
-                        ui.label(item['name']).classes('text-gray-400')
-                        ui.label(item['value']).classes('text-white')
-                        
-                        color_class = 'text-[#32D74B]' if item['is_up'] else 'text-[#FF453A]'
-                        arrow = '▲' if item['is_up'] else '▼'
-                        ui.label(f"{arrow} {item.get('change', '')}").classes(color_class)
-                        
-        except RuntimeError: pass
-            
-    update()
-    # อัปเดตข้อมูลทุกๆ 1 นาที (ไม่ให้วิ่งกระตุก)
-    ui.timer(60.0, update)
+                p_str = f"฿{price:,.2f}" if sym == 'THB=X' else f"${price:,.2f}"
+                
+                html_content += f"""
+                <div class="ticker-item">
+                    <span class="t-sym">{names[i]}</span>
+                    <span class="t-prc">{p_str}</span>
+                    <span class="{color_class}">{change_pct:+.2f}% {icon}</span>
+                </div>
+                """
+            except Exception:
+                pass 
+                
+        if html_content:
+            full_content = html_content + html_content 
+            new_html = f'<div class="ticker-wrap"><div class="ticker-move"><div style="color:#D0FD3E; font-weight:900; margin-right:20px; animation: pulse-green 2s infinite;">● LIVE</div>{full_content}</div></div>'
+            ticker_container.content = new_html
+
+    # สั่งงานให้เริ่มทำทันที และวนลูปทุก 60 วินาที
+    ui.timer(0.1, update_ticker, once=True)
+    ui.timer(60.0, update_ticker)

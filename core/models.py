@@ -175,3 +175,51 @@ def clear_stock_alert(user_id: str, ticker: str):
             c.close()
     except Exception as e:
         pass
+def get_user_price_alerts(user_id: str):
+    """ดึงข้อมูลการตั้งเตือนราคาจากตาราง user_price_alerts"""
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, symbol, target_price, condition, is_active FROM user_price_alerts WHERE user_id = %s ORDER BY is_active DESC, id DESC", (str(user_id),))
+            rows = c.fetchall()
+            c.close()
+        return [{"id": r[0], "symbol": r[1], "target_price": float(r[2]), "condition": r[3], "is_active": int(r[4])} for r in rows]
+    except Exception as e:
+        print(f"❌ DB Error (get_user_price_alerts): {e}")
+        return []
+
+def delete_price_alert(alert_id: int):
+    """ลบการตั้งเตือนราคา"""
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM user_price_alerts WHERE id = %s", (alert_id,))
+            conn.commit()
+            c.close()
+        return True
+    except Exception as e:
+        print(f"❌ DB Error (delete_price_alert): {e}")
+        return False    
+def set_user_price_alert(user_id: str, symbol: str, target_price: float, condition: str):
+    """บันทึกแจ้งเตือนลงตาราง user_price_alerts ที่บอท Telegram ใช้"""
+    if target_price <= 0: return False
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            # เช็คว่ามี alert ของหุ้นตัวนี้ที่ยัง active อยู่ไหม
+            c.execute("SELECT id FROM user_price_alerts WHERE user_id = %s AND symbol = %s AND is_active = 1", (str(user_id), symbol.upper()))
+            row = c.fetchone()
+            
+            if row:
+                # ถ้ามีอยู่แล้ว ให้อัปเดตราคาเป้าหมายใหม่
+                c.execute("UPDATE user_price_alerts SET target_price = %s, condition = %s WHERE id = %s", (float(target_price), condition, row[0]))
+            else:
+                # ถ้ายังไม่มี ให้สร้างใหม่
+                c.execute("INSERT INTO user_price_alerts (user_id, symbol, target_price, condition, is_active) VALUES (%s, %s, %s, %s, 1)", 
+                          (str(user_id), symbol.upper(), float(target_price), condition))
+            conn.commit()
+            c.close()
+        return True
+    except Exception as e:
+        print(f"❌ DB Error (set_user_price_alert): {e}")
+        return False    

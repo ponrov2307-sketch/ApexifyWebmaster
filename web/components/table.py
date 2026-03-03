@@ -1,125 +1,143 @@
 from nicegui import ui, app
-from core.config import COLORS
-from core.models import get_user_by_telegram # 🌟 ดึงข้อมูลสดจาก DB
+from core.models import get_user_by_telegram
 import random
 
 DOMAIN_MAP = {
     'AAPL': 'apple.com', 'MSFT': 'microsoft.com', 'GOOGL': 'google.com',
     'AMZN': 'amazon.com', 'NVDA': 'nvidia.com', 'META': 'meta.com',
     'TSLA': 'tesla.com', 'JNJ': 'jnj.com', 'V': 'visa.com', 'WMT': 'walmart.com',
-    'JPM': 'jpmorganchase.com', 'PG': 'pg.com', 'MA': 'mastercard.com',
-    'HD': 'homedepot.com', 'CVX': 'chevron.com', 'LLY': 'lilly.com',
-    'BAC': 'bankofamerica.com', 'PFE': 'pfizer.com', 'KO': 'coca-colacompany.com',
-    'VOO': 'vanguard.com', 'QQQ': 'invesco.com', 'SPY': 'ssga.com',
-    'INTC': 'intel.com', 'AMD': 'amd.com', 'NFLX': 'netflix.com',
     'BTC-USD': 'bitcoin.org'
 }
 
-def create_portfolio_table(assets: list, on_edit, on_news, on_chart):
+T_GREEN = '#32D74B' # สีเขียว Apple
+T_RED = '#FF453A'   # สีแดง Apple
+def create_table_skeleton(row_count=3):
+    """ฟังก์ชันสร้างกล่องกระพริบระหว่างรอโหลดข้อมูล"""
+    with ui.column().classes('w-full mt-2 gap-3 md:gap-4'):
+        for _ in range(row_count):
+            # โครงสร้างกล่องกระจกแบบเดียวกับของจริง แต่ใช้ animate-pulse
+            with ui.row().classes('w-full bg-[#12161E]/40 backdrop-blur-md border border-white/5 rounded-[24px] p-4 md:p-5 items-center justify-between flex-wrap sm:flex-nowrap gap-4 animate-pulse'):
+                
+                # 1. ซ้ายสุด: โลโก้กลมๆ และ ชื่อหุ้น
+                with ui.row().classes('items-center gap-4 shrink-0 min-w-[200px]'):
+                    ui.element('div').classes('w-12 h-12 md:w-14 md:h-14 rounded-full bg-white/5')
+                    with ui.column().classes('gap-2'):
+                        ui.element('div').classes('w-20 h-6 bg-white/10 rounded-md')
+                        ui.element('div').classes('w-32 h-4 bg-white/5 rounded-md')
+                
+                # 2. ตรงกลาง: กราฟ Sparkline
+                ui.element('div').classes('flex-1 w-full sm:w-[140px] h-[50px] bg-gradient-to-r from-transparent via-white/5 to-transparent rounded-lg')
+                
+                # 3. ขวาสุด: ตัวเลขราคาและกำไร
+                with ui.column().classes('items-end gap-2 shrink-0 min-w-[160px]'):
+                    ui.element('div').classes('w-24 h-6 bg-white/10 rounded-md')
+                    ui.element('div').classes('w-16 h-5 bg-white/5 rounded-md')
+# (โค้ดช่วงบนของ table.py ปล่อยไว้เหมือนเดิมครับ ตั้งแต่ import จนถึง create_table_skeleton)
+
+# 🌟 ฟังก์ชันวาดตารางแบบใหม่ ที่รองรับการอัปเดตแบบ Direct Injection
+def create_portfolio_table(assets: list, on_edit, on_news, on_chart, ui_refs: dict = None):
+    # ui_refs คือดิกชันนารีเปล่าที่รับมาจาก app.py เอาไว้เก็บตำแหน่งตัวเลขบนจอ
+    if ui_refs is None: ui_refs = {} 
+    
     currency = app.storage.user.get('currency', 'USD')
     curr_sym = '฿' if currency == 'THB' else '$'
     curr_rate = 34.5 if currency == 'THB' else 1.0 
-    lang = app.storage.user.get('lang', 'TH')
     
-    # 🌟 ดึงสิทธิ์สดๆ ป้องกัน AI ล็อคมั่ว
     tid = app.storage.user.get('telegram_id')
     user_info = get_user_by_telegram(tid) if tid else {}
     role = str(user_info.get('role', 'free')).lower()
+    is_premium = role in ['pro', 'vip', 'admin']
 
-    with ui.column().classes('w-full mt-4 gap-4'):
+    with ui.column().classes('w-full mt-2 gap-3 md:gap-4'):
         if not assets:
-            ui.label('ยังไม่มี Watchlist กด + Add Holding เพื่อเริ่มต้น').classes('w-full p-12 text-center bg-[#161B22]/50 text-gray-500 font-bold rounded-3xl border border-gray-800 border-dashed')
+            with ui.column().classes('w-full items-center justify-center p-12 bg-[#12161E]/50 backdrop-blur-md rounded-[24px] border border-white/5 border-dashed'):
+                ui.icon('inventory_2', size='4xl').classes('text-gray-600 mb-4')
+                ui.label('No assets found.').classes('text-lg text-gray-400 font-bold')
+                ui.label('Click + ADD HOLDING to start your journey.').classes('text-sm text-gray-500')
             return
 
         for asset in assets:
             ticker = asset.get('ticker', 'N/A')
-            shares = asset.get('shares', 0)
-            base_cost = asset.get('avg_cost', 0)
-            base_price = asset.get('last_price', 0)
+            shares = float(asset.get('shares', 0))
+            base_cost = float(asset.get('avg_cost', 0))
+            base_price = float(asset.get('last_price', 0))
             
             cost = base_cost * curr_rate
             last_price = base_price * curr_rate
+            
+            total_value = shares * last_price
             profit = (last_price - cost) * shares
             profit_pct = (profit / (cost * shares) * 100) if cost * shares > 0 else 0
+            
             sparkline = asset.get('sparkline', [])
-            is_up = asset.get('is_up', True)
-
-            glow_class = 'blink-green' if profit >= 0 else 'blink-red'
+            
+            # 🌟 ดึงแนวโน้มระยะสั้นมากำหนดสีกราฟแยกต่างหาก
+            is_up = asset.get('is_up', profit >= 0)
+            spark_color = T_GREEN if is_up else T_RED
+            
+            profit_color = T_GREEN if profit >= 0 else T_RED
             profit_sign = '+' if profit >= 0 else ''
-            line_color = COLORS['success'] if is_up else COLORS['danger']
 
-            with ui.row().classes('w-full bg-[#161B22]/60 backdrop-blur-xl border border-white/5 rounded-2xl p-4 items-center justify-between hover:bg-[#1C2128] transition-all duration-300 flex-nowrap shadow-md'):
+            # 🌟 ROW CONTAINER: ดีไซน์กระจกเดิมของคุณ
+            with ui.row().classes('w-full bg-[#12161E]/60 hover:bg-[#1C2128]/90 backdrop-blur-xl border border-white/5 hover:border-white/10 rounded-[24px] p-4 md:p-5 transition-all duration-300 hover:-translate-y-1 shadow-lg hover:shadow-2xl items-center justify-between flex-wrap sm:flex-nowrap gap-4 group cursor-pointer'):
                 
-                # ==========================================
-                # 🌟 ส่วนที่แก้ไขเรื่องโลโก้ (ใช้ Google API)
-                # ==========================================
-                with ui.row().classes('items-center gap-4 w-48 shrink-0'):
+                # 📱 1. ซ้ายสุด: โลโก้, ชื่อหุ้น, และป้ายข้อมูล
+                with ui.row().classes('items-center gap-4 shrink-0 min-w-[200px]'):
                     clean_ticker = ticker.replace('.BK', '').upper()
                     domain = DOMAIN_MAP.get(clean_ticker)
+                    logo_url = f"https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.{domain}&size=128" if domain else f"https://ui-avatars.com/api/?name={clean_ticker}&background=111&color=fff"
                     
-                    # ใช้ Google Favicon (ไม่โดนบล็อกแน่นอน 100%)
-                    if domain:
-                        logo_url = f"https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.{domain}&size=128"
-                    else:
-                        # ถ้าไม่มีในรายชื่อเว็บ ให้สร้างตัวอักษรย่อสวยๆ มาแทน
-                        logo_url = f"https://ui-avatars.com/api/?name={clean_ticker}&background=11141C&color=fff&bold=true&font-size=0.4"
+                    with ui.element('div').classes('relative'):
+                        ui.element('div').classes('absolute inset-0 bg-white/10 rounded-full blur-md group-hover:blur-lg transition-all')
+                        ui.image(logo_url).classes('w-12 h-12 md:w-14 md:h-14 rounded-full border-2 border-white/10 relative z-10 bg-[#0B0E14]')
                     
-                    with ui.link(target=f"https://www.{domain}" if domain else f"https://finance.yahoo.com/quote/{clean_ticker}", new_tab=True).classes('w-12 h-12 shrink-0 transition-transform hover:scale-110'):
-                        # บังคับพื้นหลังสีขาว (bg-white) ให้โลโก้สีดำมองเห็นชัดเจนบนเว็บพื้นดำ
-                        with ui.avatar().classes('w-full h-full rounded-xl border border-gray-700/50 shadow-inner p-[4px] bg-white relative overflow-hidden'):
-                            ui.label(ticker[0:2].upper()).classes('absolute-center text-gray-300 font-black text-sm z-0')
-                            ui.image(logo_url).classes('w-full h-full object-contain z-10')
-                    
-                    with ui.column().classes('gap-0'):
-                        ui.label(ticker).classes('text-xl font-black text-white tracking-wide')
-                        ui.label(f"{shares:,.2f} sh").classes('text-xs text-gray-400 font-bold')
-
-                # ==========================================
-                # กราฟ Sparkline
-                # ==========================================
-                with ui.element('div').classes('w-32 h-12 overflow-hidden relative shrink-0 rounded-md'):
-                    if sparkline and len(sparkline) > 1:
-                        ui.echart({
-                            'animation': False, 
-                            'xAxis': {'type': 'category', 'show': False, 'data': list(range(len(sparkline)))},
-                            'yAxis': {'type': 'value', 'show': False, 'min': 'dataMin', 'max': 'dataMax'},
-                            'series': [{
-                                'data': sparkline, 'type': 'line', 'smooth': True, 'showSymbol': False, 
-                                'lineStyle': {'color': line_color, 'width': 2},
-                                'areaStyle': {'color': line_color, 'opacity': 0.15}
-                            }],
-                            'grid': {'left': 0, 'right': 0, 'top': 5, 'bottom': 5},
-                        }).classes('absolute inset-0 w-full h-full pointer-events-none')
-                    else:
-                        ui.label('Loading...').classes('text-gray-600 text-[10px] font-bold absolute-center')
-
-                # ==========================================
-                # RSI Indicator
-                # ==========================================
-                rsi_val = random.randint(30, 70)
-                rsi_color = "#32D74B" if rsi_val > 65 else ("#FF453A" if rsi_val < 35 else "#8B949E")
-                with ui.column().classes('flex-1 max-w-[150px] items-center gap-1'):
-                    ui.label(f"RSI: {rsi_val}").classes('text-[10px] font-bold text-gray-500 tracking-wider')
-                    with ui.element('div').classes('w-full h-1 bg-gray-800 rounded-full overflow-hidden'):
-                        ui.element('div').classes('h-full').style(f'width: {rsi_val}%; background-color: {rsi_color};')
-
-                # ==========================================
-                # ปุ่มเครื่องมือ (AI / Chart / Edit)
-                # ==========================================
-                with ui.row().classes('gap-2 shrink-0 bg-[#0D1117]/50 p-1 rounded-xl border border-gray-800/50'):
-                    btn_style = 'text-gray-400 hover:text-[#D0FD3E] transition-all rounded-lg'
-                    ui.button(icon='candlestick_chart', on_click=lambda t=ticker: on_chart(t)).props('flat size=sm round').classes(btn_style).tooltip('Technical Chart')
-                    
-                    if role in ['pro', 'vip', 'admin']:
-                        ui.button(icon='smart_toy', on_click=lambda t=ticker: on_news(t)).props('flat size=sm round').classes(btn_style).tooltip('AI Sentiment')
-                    else:
-                        ui.button(icon='lock', on_click=lambda: ui.notify('🔒 สิทธิ์ PRO/VIP เท่านั้น', type='warning')).props('flat size=sm round').classes('text-gray-600').tooltip('AI Sentiment (Locked)')
+                    with ui.column().classes('gap-1'):
+                        ui.label(ticker).classes('text-xl md:text-2xl font-black text-white leading-none tracking-wide')
                         
-                    ui.button(icon='edit', on_click=lambda t=ticker: on_edit(t)).props('flat size=sm round').classes(btn_style).tooltip('Edit Asset')
+                        with ui.row().classes('items-center gap-1.5 mt-1'):
+                            # 🌟 ผูก UI Refs ตัวที่ 1: ราคาหุ้น (Price)
+                            ui_refs[f'lbl_price_{ticker}'] = ui.label(f"Price: {curr_sym}{last_price:,.2f}").classes('tabular-nums text-[10px] md:text-xs text-gray-300 bg-white/10 px-2 py-0.5 rounded-md font-bold')
+                            ui.label(f"Avg: {curr_sym}{cost:,.2f}").classes('text-[10px] md:text-xs text-gray-400 bg-white/5 px-2 py-0.5 rounded-md')
+                            ui.label(f"Hold: {shares:,.4f}").classes('text-[10px] md:text-xs text-gray-400 bg-white/5 px-2 py-0.5 rounded-md hidden sm:block')
 
-                # ==========================================
-                # มูลค่าและกำไร (เรืองแสง)
-                # ==========================================
-                with ui.column().classes('w-44 items-end gap-0 shrink-0'):
-                    ui.label(f"{curr_sym}{(shares * last_price):,.2f}").classes(f'text-2xl font-black {glow_class}')
-                    ui.label(f"{profit_sign}{profit_pct:.2f}%  {profit_sign}{curr_sym}{profit:,.2f}").classes(f'text-sm font-bold {glow_class}')
+                # 📊 2. ตรงกลาง: Sparkline (ลบ Spinner ทิ้งถาวร และคำนวณสีจากเส้นกราฟจริง)
+                with ui.column().classes('flex-1 items-center justify-center w-full sm:w-auto h-16 min-w-[120px]'):
+                    spark_data = sparkline if sparkline else []
+                    
+                    # 🌟 เทียบกันตรงๆ เลย! ถ้าราคาปลายทาง >= ราคาต้นทาง ให้เป็นสีเขียว
+                    is_chart_up = spark_data[-1] >= spark_data[0] if len(spark_data) > 1 else (profit >= 0)
+                    spark_color = T_GREEN if is_chart_up else T_RED
+
+                    ui_refs[f'spark_{ticker}'] = ui.echart({
+                        'animation': False, 
+                        'xAxis': {'show': False, 'type': 'category'}, 
+                        'yAxis': {'show': False, 'min': 'dataMin', 'max': 'dataMax'}, 
+                        'series': [{
+                            'data': spark_data, 
+                            'type': 'line', 
+                            'smooth': True, 
+                            'showSymbol': False, 
+                            'lineStyle': {'color': spark_color, 'width': 3, 'shadowColor': spark_color, 'shadowBlur': 5}, 
+                            'areaStyle': {'color': spark_color, 'opacity': 0.15} 
+                        }], 
+                        'grid': {'left': 0, 'right': 0, 'top': 5, 'bottom': 5}
+                    }).classes('pointer-events-none').style('width: 140px; height: 50px; margin: auto;')
+    
+
+                # 💰 3. ขวาสุด: ยอดเงินรวม
+                with ui.column().classes('items-end gap-1 shrink-0 min-w-[160px]'):
+                    # 🌟 ผูก UI Refs ตัวที่ 2: มูลค่ารวม (Total Value)
+                    ui_refs[f'val_{ticker}'] = ui.label(f"{curr_sym}{total_value:,.2f}").classes('tabular-nums text-xl md:text-2xl font-black leading-none tracking-tight drop-shadow-md').style(f'color: {profit_color};')
+                    
+                    # 🌟 ผูก UI Refs ตัวที่ 3: กำไร/ขาดทุน (PnL)
+                    pnl_string = f"{profit_sign}{curr_sym}{abs(profit):,.2f} ({profit_sign}{profit_pct:.2f}%)"
+                    ui_refs[f'prof_{ticker}'] = ui.label(pnl_string).classes('tabular-nums text-xs md:text-sm font-bold px-2 py-0.5 rounded-md').style(f'color: {profit_color}; background-color: {profit_color}10;')
+
+                    # กลุ่มปุ่มกด 
+                    with ui.row().classes('gap-1 mt-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300'):
+                        ui.button(icon='bar_chart', on_click=lambda t=ticker: on_chart(t)).props('flat dense round size=sm').classes('text-gray-400 hover:text-[#D0FD3E] bg-white/5')
+                        if is_premium:
+                            ui.button(icon='psychology', on_click=lambda t=ticker: on_news(t)).props('flat dense round size=sm').classes('text-[#D0FD3E] bg-[#D0FD3E]/10')
+                        else:
+                            ui.button(icon='lock', on_click=lambda: ui.notify('🔒 Upgrade PRO to unlock AI Insights', type='warning')).props('flat dense round size=sm').classes('text-gray-600 bg-white/5')
+                        ui.button(icon='edit', on_click=lambda t=ticker: on_edit(t)).props('flat dense round size=sm').classes('text-gray-400 hover:text-white bg-white/5')

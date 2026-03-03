@@ -62,5 +62,9 @@ def require_login():
 
 def logout():
     """ฟังก์ชันออกจากระบบ"""
-    app.storage.user.clear()
+    # 🌟 ลบเฉพาะข้อมูลการล็อกอิน แต่เก็บการตั้งค่าอื่นๆ (Popup, ภาษา, สกุลเงิน) ไว้
+    app.storage.user['authenticated'] = False
+    app.storage.user.pop('telegram_id', None)
+    app.storage.user.pop('user_id', None)
+    
     ui.navigate.to('/login')

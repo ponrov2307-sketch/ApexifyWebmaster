@@ -1,7 +1,10 @@
 import telebot
 from core.config import TELEGRAM_TOKEN
 from core.database import db
-
+from services.pnl_generator import generate_pnl_card
+from services.yahoo_finance import get_live_price
+from core.models import get_portfolio
+import io
 # เริ่มต้นตัวบอท
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
@@ -89,3 +92,50 @@ def register_handlers():
             bot.reply_to(message, "❌ จำนวนหุ้นและราคาต้องเป็นตัวเลขเท่านั้นครับ")
         except Exception as e:
             bot.reply_to(message, f"❌ เกิดข้อผิดพลาด: {str(e)}")
+    @bot.message_handler(commands=['pnl'])
+    def handle_pnl_card(message):
+        """คำสั่ง /pnl [ชื่อหุ้น] เพื่อสร้างการ์ดอวดกำไร"""
+        parts = message.text.split()
+        if len(parts) < 2:
+            bot.reply_to(message, "❌ กรุณาพิมพ์ชื่อหุ้นด้วยครับ เช่น <code>/pnl NVDA</code>", parse_mode='HTML')
+            return
+            
+        ticker = parts[1].upper()
+        telegram_id = message.from_user.id
+        username = message.from_user.username or message.from_user.first_name
+        
+        # 1. เช็คว่ามีหุ้นนี้ในพอร์ตไหม
+        user_res = db.table('apex_users').select('id').eq('telegram_id', telegram_id).execute()
+        if not user_res.data:
+            bot.reply_to(message, "⚠️ คุณยังไม่ได้ลงทะเบียนครับ พิมพ์ /start ก่อนนะ")
+            return
+            
+        user_id = user_res.data[0]['id']
+        portfolio = get_portfolio(user_id)
+        asset = next((a for a in portfolio if a['ticker'] == ticker), None)
+        
+        if not asset:
+            bot.reply_to(message, f"❌ ไม่พบหุ้น <b>{ticker}</b> ในพอร์ตของคุณครับ", parse_mode='HTML')
+            return
+            
+        # 2. ส่งข้อความรอ
+        wait_msg = bot.reply_to(message, "🎨 กำลังสร้างการ์ด PnL ระดับ Pro ให้คุณ...")
+        
+        try:
+            # 3. ดึงราคาปัจจุบัน และวาดรูป
+            entry_price = float(asset['avg_cost'])
+            current_price = get_live_price(ticker)
+            
+            image_bytes = generate_pnl_card(username, ticker, entry_price, current_price)
+            
+            # 4. ส่งรูปภาพกลับไปให้ผู้ใช้
+            bot.send_photo(
+                message.chat.id, 
+                photo=image_bytes, 
+                caption=f"🚀 ผลประกอบการ <b>{ticker}</b> ของคุณ!\nกด Share อวดเพื่อนได้เลย!",
+                parse_mode='HTML'
+            )
+            bot.delete_message(message.chat.id, wait_msg.message_id)
+            
+        except Exception as e:
+            bot.edit_message_text(f"❌ เกิดข้อผิดพลาดในการสร้างภาพ: {e}", message.chat.id, wait_msg.message_id)        

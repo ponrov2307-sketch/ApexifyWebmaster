@@ -1,134 +1,165 @@
 from nicegui import ui, app
-from services.yahoo_finance import get_candlestick_data
-from core.config import COLORS
+from core.models import get_user_by_telegram
+import yfinance as yf
 import pandas as pd
 
-def calculate_ma(day_count, data):
-    result = []
-    for i in range(len(data)):
-        if i < day_count - 1:
-            result.append('-')
-            continue
-        sum_val = sum(data[i - j]['close'] for j in range(day_count))
-        result.append(round(sum_val / day_count, 2))
-    return result
-
-def calculate_macd(data):
-    """🌟 ฟังก์ชันคำนวณ MACD ขั้นเทพ"""
-    if not data: return [], [], []
-    closes = pd.Series([d['close'] for d in data])
-    ema12 = closes.ewm(span=12, adjust=False).mean()
-    ema26 = closes.ewm(span=26, adjust=False).mean()
-    macd = ema12 - ema26
-    signal = macd.ewm(span=9, adjust=False).mean()
-    hist = macd - signal
-    
-    macd_list = [round(x, 2) if not pd.isna(x) else '-' for x in macd]
-    signal_list = [round(x, 2) if not pd.isna(x) else '-' for x in signal]
-    hist_list = [round(x, 2) if not pd.isna(x) else '-' for x in hist]
-    return macd_list, signal_list, hist_list
-
-def find_support_resistance(data):
-    """🌟 Smart Support/Resistance AI (หาแนวรับ-แนวต้านอัตโนมัติ)"""
-    if not data: return 0, 0
-    recent_data = data[-90:] # วิเคราะห์ 90 วันล่าสุด
-    lows = sorted([d['low'] for d in recent_data])
-    highs = sorted([d['high'] for d in recent_data], reverse=True)
-    
-    # ใช้ค่าเฉลี่ยของจุดต่ำสุด/สูงสุด 5 จุด เพื่อหาแนวรับแนวต้านที่แข็งแกร่ง (Smart S/R)
-    support = sum(lows[:5]) / 5 if len(lows) >= 5 else lows[0]
-    resistance = sum(highs[:5]) / 5 if len(highs) >= 5 else highs[0]
-    return round(support, 2), round(resistance, 2)
-
 async def show_candlestick_chart(ticker: str):
-    raw_data = get_candlestick_data(ticker, period="6mo") 
+    app.storage.client['modal_open'] = True
     
-    if not raw_data:
-        ui.notify(f'ไม่พบข้อมูลกราฟสำหรับ {ticker}', type='warning')
-        return
+   # 1. เช็คระดับผู้ใช้งาน 
+    tid = app.storage.user.get('telegram_id')
+    user_info = get_user_by_telegram(tid) if tid else {}
+    role = str(user_info.get('role', 'free')).lower()
+    
+    # 🌟 จ่ายเงินเท่านั้นถึงจะดูได้ (VIP, PRO, Admin)
+    is_paid_user = role in ['vip', 'pro', 'admin']
 
-    dates = [item['date'] for item in raw_data]
-    values = [[item['open'], item['close'], item['low'], item['high']] for item in raw_data]
-    
-    ma20 = calculate_ma(20, raw_data)
-    ma50 = calculate_ma(50, raw_data)
-    macd, signal, hist = calculate_macd(raw_data)
-    support, resistance = find_support_resistance(raw_data)
-    
-    volumes = []
-    hist_data = []
-    for i, item in enumerate(raw_data):
-        is_up = item['close'] >= item['open']
-        volumes.append([i, item.get('volume', 0), 1 if is_up else -1])
-        hist_val = hist[i] if hist[i] != '-' else 0
-        hist_data.append({'value': hist_val, 'itemStyle': {'color': '#32D74B' if hist_val >= 0 else '#FF453A'}})
-
-    with ui.dialog() as dialog, ui.card().classes('w-full max-w-6xl bg-[#0D1117]/95 backdrop-blur-2xl border border-white/10 p-0 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]'):
-        
-        with ui.row().classes('w-full bg-gradient-to-r from-[#161B22] to-[#1C2128] p-5 border-b border-white/5 justify-between items-start z-10'):
-            with ui.row().classes('items-center gap-4'):
-                ui.icon('ssid_chart', size='lg').classes('text-[#D0FD3E]')
-                with ui.column().classes('gap-0'):
-                    ui.label(f"{ticker} - ADVANCED AI CHART").classes('text-2xl font-black text-white tracking-widest')
-                    ui.label('Indicators: MA(20,50) • MACD • Smart S/R').classes('text-xs text-[#D0FD3E] font-bold tracking-wider')
+    # 🌟 ฟังก์ชันโหลดข้อมูลใหม่แบบ Real-time ตาม Timeframe ที่กด
+    def fetch_dynamic_data(t, period, interval):
+        try:
+            data = yf.download(t, period=period, interval=interval, progress=False)
+            if data.empty: return []
             
-            ui.button(icon='close', on_click=dialog.close).props('flat dense').classes('text-gray-400 hover:text-[#FF453A]')
+            if isinstance(data.columns, pd.MultiIndex):
+                data = data.xs(t, level=1, axis=1)
+                
+            ohlc = []
+            for index, row in data.iterrows():
+                date_str = index.strftime('%Y-%m-%d')
+                ohlc.append({
+                    "date": date_str, 
+                    "open": float(row['Open']), "high": float(row['High']), 
+                    "low": float(row['Low']), "close": float(row['Close']), 
+                    "volume": int(row['Volume'])
+                })
+            return ohlc
+        except:
+            return []
 
-        with ui.column().classes('w-full p-6 bg-[#0D1117] relative'):
-            # 🌟 ป้ายบอกราคาแนวรับ-แนวต้านบนกราฟ
-            with ui.row().classes('absolute top-8 left-20 z-20 gap-4 bg-[#11141C]/80 p-2 rounded-xl border border-white/10 backdrop-blur-sm shadow-lg'):
-                with ui.row().classes('items-center gap-2'):
-                    ui.element('div').classes('w-3 h-1 bg-[#FF453A]')
-                    ui.label(f'Resistance: ${resistance:,.2f}').classes('text-xs font-bold text-white')
-                with ui.row().classes('items-center gap-2'):
-                    ui.element('div').classes('w-3 h-1 bg-[#32D74B]')
-                    ui.label(f'Support: ${support:,.2f}').classes('text-xs font-bold text-white')
+    # 3. สร้างหน้าต่าง Pop-up 
+    with ui.dialog() as dialog, ui.card().classes('w-full max-w-6xl bg-[#0B0E14] border border-[#1F2937] p-0 rounded-2xl shadow-[0_0_80px_rgba(0,0,0,0.9)]'):
+        
+        with ui.row().classes('w-full bg-gradient-to-r from-[#161B22] to-[#0D1117] p-5 border-b border-white/5 justify-between items-center z-10'):
+            with ui.row().classes('items-center gap-4'):
+                ui.icon('candlestick_chart', size='lg').classes('text-[#D0FD3E] drop-shadow-[0_0_10px_rgba(208,253,62,0.5)]')
+                with ui.column().classes('gap-0'):
+                    ui.label(f'{ticker}').classes('text-2xl font-black text-white tracking-widest leading-none')
+                    ui.label('ADVANCED TECHNICAL CHART').classes('text-[10px] text-gray-500 font-bold tracking-[0.2em]')
+            ui.button(icon='close', on_click=dialog.close).props('flat dense').classes('text-gray-500 hover:text-[#FF453A] transition-colors')
 
-            ui.echart({
-                'animation': False,
-                'tooltip': {'trigger': 'axis', 'axisPointer': {'type': 'cross'}},
-                'axisPointer': {'link': [{'xAxisIndex': 'all'}], 'label': {'backgroundColor': '#777'}}, 
-                'grid': [
-                    {'left': '8%', 'right': '8%', 'height': '45%', 'top': '8%'},          
-                    {'left': '8%', 'right': '8%', 'top': '58%', 'height': '12%'},         
-                    {'left': '8%', 'right': '8%', 'top': '76%', 'height': '15%'}          
-                ],
-                'xAxis': [
-                    {'type': 'category', 'data': dates, 'boundaryGap': False, 'axisLine': {'lineStyle': {'color': '#8B949E'}}, 'min': 'dataMin', 'max': 'dataMax'},
-                    {'type': 'category', 'gridIndex': 1, 'data': dates, 'axisLabel': {'show': False}, 'min': 'dataMin', 'max': 'dataMax'},
-                    {'type': 'category', 'gridIndex': 2, 'data': dates, 'axisLabel': {'show': False}, 'min': 'dataMin', 'max': 'dataMax'}
-                ],
-                'yAxis': [
-                    {'scale': True, 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}},
-                    {'scale': True, 'gridIndex': 1, 'splitNumber': 2, 'axisLabel': {'show': False}, 'splitLine': {'show': False}},
-                    {'scale': True, 'gridIndex': 2, 'splitNumber': 2, 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}}
-                ],
-                'dataZoom': [
-                    {'type': 'inside', 'xAxisIndex': [0, 1, 2], 'start': 30, 'end': 100},
-                    {'show': True, 'xAxisIndex': [0, 1, 2], 'type': 'slider', 'bottom': '0%', 'textStyle': {'color': '#8B949E'}, 'borderColor': '#1C2128'}
-                ],
-                'series': [
-                    {
-                        'name': 'Candle', 'type': 'candlestick', 'data': values, 
-                        'itemStyle': {'color': COLORS['success'], 'color0': COLORS['danger'], 'borderColor': COLORS['success'], 'borderColor0': COLORS['danger']},
-                        # 🌟 ตีเส้นแนวรับแนวต้านใน ECharts
-                        'markLine': {
-                            'symbol': ['none', 'none'],
-                            'data': [
-                                {'yAxis': resistance, 'name': 'Resistance', 'lineStyle': {'color': '#FF453A', 'type': 'dashed', 'width': 1.5}},
-                                {'yAxis': support, 'name': 'Support', 'lineStyle': {'color': '#32D74B', 'type': 'dashed', 'width': 1.5}}
-                            ],
-                            'label': {'show': False}
-                        }
+        with ui.column().classes('w-full p-6 relative'):
+            
+            # โซนเครื่องมือด้านบน
+            with ui.row().classes('w-full justify-between items-center mb-3 z-10 relative'):
+                with ui.row().classes('gap-4 items-center'):
+                    ui.label('Interactive TradingView Style').classes('text-[10px] font-bold text-gray-500 tracking-widest uppercase bg-[#161B22] px-3 py-1 rounded-md border border-white/5')
+                    with ui.row().classes('gap-3 text-[10px] font-black tracking-wider'):
+                        ui.label('MA 9').classes('text-[#D0FD3E]')
+                        ui.label('MA 20').classes('text-[#00BFFF]')
+
+                # 🌟 ปุ่มเปลี่ยน Timeframe
+                with ui.row().classes('gap-1 bg-[#11141C] p-1 rounded-lg border border-gray-800 shadow-inner'):
+                    btn_1d = ui.button('1D').props('unelevated size=sm').classes('bg-[#1F2937] text-[#D0FD3E] font-black border border-white/10 shadow-md')
+                    btn_1w = ui.button('1W').props('flat size=sm').classes('text-gray-400 hover:text-white font-bold transition-colors')
+                    btn_1m = ui.button('1M').props('flat size=sm').classes('text-gray-400 hover:text-white font-bold transition-colors')
+                    
+                    if not is_paid_user:
+                        btn_1w.props('icon=lock').classes(replace='text-gray-600')
+                        btn_1m.props('icon=lock').classes(replace='text-gray-600')
+
+            # สร้างตัวแปรเก็บโครงสร้างกราฟเปล่าๆ ไว้ก่อน
+            chart_element = ui.echart({}).classes('w-full h-[600px] rounded-xl overflow-hidden')
+
+            # 🌟 ฟังก์ชันสลับกราฟ (เมื่อกดปุ่ม 1D, 1W, 1M)
+           # 🌟 ฟังก์ชันสลับกราฟ (เมื่อกดปุ่ม 1D, 1W, 1M)
+            def change_timeframe(interval_code, period_code, active_btn):
+                if not is_paid_user and interval_code in ['1wk', '1mo']:
+                    ui.notify('🔒 กราฟระยะยาว (1W, 1M) สงวนสิทธิ์สำหรับ VIP และ PRO', color='warning')
+                    return
+                # เปลี่ยนสีปุ่มให้รู้ว่ากดตัวไหนอยู่
+                for b in [btn_1d, btn_1w, btn_1m]:
+                    if not is_paid_user and b in [btn_1w, btn_1m]: continue
+                    b.props('flat remove=unelevated').classes(replace='text-gray-400 hover:text-white font-bold transition-colors')
+                
+                active_btn.props('unelevated remove=flat').classes(replace='bg-[#1F2937] text-[#D0FD3E] font-black border border-white/10 shadow-md')
+
+                # โหลดข้อมูลจริง!
+                raw_data = fetch_dynamic_data(ticker, period_code, interval_code)
+                if not raw_data:
+                    ui.notify(f'⚠️ ไม่สามารถโหลดข้อมูล {interval_code} ได้ในขณะนี้', type='warning')
+                    return
+
+                dates = [d['date'] for d in raw_data]
+                k_data = [[d['open'], d['close'], d['low'], d['high']] for d in raw_data]
+                
+                ma9, ma20 = [], []
+                for i in range(len(k_data)):
+                    ma9.append(round(sum([x[1] for x in k_data[i-8:i+1]]) / 9, 2) if i >= 8 else '-')
+                    ma20.append(round(sum([x[1] for x in k_data[i-19:i+1]]) / 20, 2) if i >= 19 else '-')
+                # 👇 เพิ่มบรรทัดนี้เพื่อคำนวณ Bollinger Bands จากราคาปิด
+                from services.yahoo_finance import calculate_bollinger_bands
+                closes = [d['close'] for d in raw_data]
+                bb_upper, _, bb_lower = calculate_bollinger_bands(closes)
+                # 👆 --------------------------------------------------------
+                volumes = []
+                for d in raw_data:
+                    color = '#32D74B' if d['close'] >= d['open'] else '#FF453A'
+                    volumes.append({'value': d['volume'], 'itemStyle': {'color': color, 'opacity': 0.7}})
+
+                # ✅ [จุดที่แก้ไข] ใช้วิธีล้างของเก่า แล้วอัปเดตของใหม่แทน!
+                chart_element.options.clear()
+                chart_element.options.update({
+                    'backgroundColor': '#0B0E14',
+                    'title': {
+                        'text': ticker,
+                        'textStyle': {'color': 'rgba(255, 255, 255, 0.03)', 'fontSize': 140, 'fontWeight': '900', 'fontFamily': 'sans-serif'},
+                        'left': 'center', 'top': 'center', 'z': 0
                     },
-                    {'name': 'MA20', 'type': 'line', 'data': ma20, 'smooth': True, 'showSymbol': False, 'lineStyle': {'width': 2, 'color': '#3b82f6'}},
-                    {'name': 'MA50', 'type': 'line', 'data': ma50, 'smooth': True, 'showSymbol': False, 'lineStyle': {'width': 2, 'color': '#f97316'}},
-                    {'name': 'Volume', 'type': 'bar', 'xAxisIndex': 1, 'yAxisIndex': 1, 'data': volumes, 'itemStyle': {'color': """new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: '#32D74B'}, {offset: 1, color: '#FF453A'}])"""}},
-                    {'name': 'MACD', 'type': 'line', 'xAxisIndex': 2, 'yAxisIndex': 2, 'data': macd, 'showSymbol': False, 'lineStyle': {'color': '#3b82f6', 'width': 1.5}},
-                    {'name': 'Signal', 'type': 'line', 'xAxisIndex': 2, 'yAxisIndex': 2, 'data': signal, 'showSymbol': False, 'lineStyle': {'color': '#f97316', 'width': 1.5}},
-                    {'name': 'Histogram', 'type': 'bar', 'xAxisIndex': 2, 'yAxisIndex': 2, 'data': hist_data}
-                ]
-            }).classes('w-full h-[600px]')
+                    'tooltip': {
+                        'trigger': 'axis', 
+                        'axisPointer': {'type': 'cross', 'lineStyle': {'color': '#32D74B', 'type': 'dashed'}}, 
+                        'backgroundColor': 'rgba(17, 20, 28, 0.9)', 
+                        'borderColor': '#1F2937', 
+                        'textStyle': {'color': '#fff'},
+                        'borderWidth': 1, 'padding': 12
+                    },
+                    'axisPointer': {'link': [{'xAxisIndex': 'all'}]},
+                    'grid': [
+                        {'left': '2%', 'right': '6%', 'top': '5%', 'height': '65%'}, 
+                        {'left': '2%', 'right': '6%', 'top': '75%', 'height': '15%'}
+                    ],
+                    'xAxis': [
+                        {'type': 'category', 'data': dates, 'boundaryGap': False, 'axisLine': {'lineStyle': {'color': '#4B5563'}}, 'splitLine': {'show': False}, 'min': 'dataMin', 'max': 'dataMax'},
+                        {'type': 'category', 'gridIndex': 1, 'data': dates, 'axisLabel': {'show': False}, 'axisLine': {'show': False}}
+                    ],
+                    'yAxis': [
+                        {'scale': True, 'position': 'right', 'splitArea': {'show': True, 'areaStyle': {'color': ['rgba(255,255,255,0.01)', 'rgba(0,0,0,0)']}}, 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}, 'axisLabel': {'formatter': '${value}'}},
+                        {'gridIndex': 1, 'splitNumber': 2, 'axisLabel': {'show': False}, 'axisLine': {'show': False}, 'axisTick': {'show': False}, 'splitLine': {'show': False}}
+                    ],
+                    'dataZoom': [
+                        {'type': 'inside', 'xAxisIndex': [0, 1], 'start': 0 if interval_code in ['1wk', '1mo'] else 60, 'end': 100}, 
+                        {'show': True, 'xAxisIndex': [0, 1], 'type': 'slider', 'bottom': '2%', 'start': 0 if interval_code in ['1wk', '1mo'] else 60, 'end': 100, 'textStyle': {'color': '#8B949E'}, 'borderColor': '#1C2128', 'backgroundColor': '#0D1117', 'fillerColor': 'rgba(208,253,62,0.05)', 'handleStyle': {'color': '#D0FD3E'}}
+                    ],
+                    'series': [
+                        {'name': ticker, 'type': 'candlestick', 'data': k_data, 'itemStyle': {'color': '#32D74B', 'color0': '#FF453A', 'borderColor': '#32D74B', 'borderColor0': '#FF453A', 'borderWidth': 1.5}, 'z': 2},
+                        {'name': 'MA9', 'type': 'line', 'data': ma9, 'smooth': True, 'symbol': 'none', 'lineStyle': {'color': '#D0FD3E', 'width': 1.5, 'opacity': 0.8}, 'z': 3},
+                        {'name': 'MA20', 'type': 'line', 'data': ma20, 'smooth': True, 'symbol': 'none', 'lineStyle': {'color': '#00BFFF', 'width': 1.5, 'opacity': 0.8}, 'z': 3},
+                        
+                        # 👇 แก้ชื่อตัวแปรตรงนี้เป็น bb_upper และ bb_lower ครับ
+                        {'name': 'BB Upper', 'type': 'line', 'data': bb_upper, 'smooth': True, 'symbol': 'none', 'lineStyle': {'color': 'rgba(255,255,255,0.2)', 'type': 'dashed'}, 'z': 1},
+                        {'name': 'BB Lower', 'type': 'line', 'data': bb_lower, 'smooth': True, 'symbol': 'none', 'lineStyle': {'color': 'rgba(255,255,255,0.2)', 'type': 'dashed'}, 'areaStyle': {'color': 'rgba(255,255,255,0.02)'}, 'z': 1},
+                        
+                        {'name': 'Volume', 'type': 'bar', 'xAxisIndex': 1, 'yAxisIndex': 1, 'data': volumes, 'z': 2}
+                    ]
+                })
+                chart_element.update() 
+
+            # ผูกฟังก์ชันเข้ากับปุ่มกด
+            btn_1d.on_click(lambda: change_timeframe('1d', '6mo', btn_1d))
+            btn_1w.on_click(lambda: change_timeframe('1wk', '2y', btn_1w))
+            btn_1m.on_click(lambda: change_timeframe('1mo', '5y', btn_1m))
+
+            change_timeframe('1d', '6mo', btn_1d)
 
     dialog.on('hide', lambda: app.storage.client.update({'modal_open': False}))
     dialog.open()

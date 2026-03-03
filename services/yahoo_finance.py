@@ -2,11 +2,12 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime
 from core.config import MARKET_INDICES
-
+import requests # 🌟 เพิ่มไว้บรรทัดบนสุดของไฟล์
+import time
 # 🌟 พื้นที่จดจำราคาหุ้นส่วนกลาง (Global Cache)
 GLOBAL_PRICE_CACHE = {}
 GLOBAL_SPARKLINE_CACHE = {}
-
+PRICE_CACHE_TIME = {}
 def update_global_cache_batch(tickers: list):
     """🌟 อัปเดตราคาแบบ Intraday (ทุก 5-15 นาที) เพื่อกราฟ Sparkline ที่ขยับจริง"""
     if not tickers: return
@@ -49,18 +50,28 @@ def get_market_summary():
     return market_data
 
 def get_live_price(ticker: str) -> float:
-    if ticker in GLOBAL_PRICE_CACHE:
+    now = time.time()
+    
+    # 🌟 ถ้าราคาเพิ่งดึงมา "ไม่ถึง 10 วินาที" ค่อยใช้ของเดิม
+    if ticker in GLOBAL_PRICE_CACHE and (now - PRICE_CACHE_TIME.get(ticker, 0)) < 10:
         return GLOBAL_PRICE_CACHE[ticker]
+        
     try:
         data = yf.download(ticker, period="1d", interval="1m", progress=False)
-        if data.empty: return 0.0
+        if data.empty: return GLOBAL_PRICE_CACHE.get(ticker, 0.0)
+        
         if isinstance(data.columns, pd.MultiIndex):
             price = float(data['Close'][ticker].dropna().iloc[-1])
         else:
             price = float(data['Close'].dropna().iloc[-1])
+            
+        # 🌟 อัปเดตราคาใหม่ และประทับเวลา
         GLOBAL_PRICE_CACHE[ticker] = price
+        PRICE_CACHE_TIME[ticker] = now
+        
         return price
-    except: return 0.0
+    except: 
+        return GLOBAL_PRICE_CACHE.get(ticker, 0.0)
 
 def get_sparkline_data(ticker: str, days: int = 7):
     closes = GLOBAL_SPARKLINE_CACHE.get(ticker, [])
@@ -196,4 +207,79 @@ def get_support_resistance(ticker: str):
         resistance = sum(highs[:5]) / 5 if len(highs) >= 5 else highs[0]
         return round(support, 2), round(resistance, 2)
     except:
-        return 0, 0    
+        return 0, 0
+# เพิ่มใน services/yahoo_finance.py
+def calculate_bollinger_bands(prices, period=20, std_dev=2):
+    """คำนวณเส้นกรอบ Bollinger Bands"""
+    import numpy as np
+    
+    if len(prices) < period:
+        return [], [], []
+    
+    series = pd.Series(prices)
+    sma = series.rolling(window=period).mean()
+    std = series.rolling(window=period).std()
+    
+    upper = sma + (std * std_dev)
+    lower = sma - (std * std_dev)
+    
+    return round(upper, 2).tolist(), round(sma, 2).tolist(), round(lower, 2).tolist()
+# ==========================================
+# 🌟 REAL DATA FUNCTIONS (ล้าง Mockup)
+# ==========================================
+
+def get_real_rsi(ticker, period=14):
+    """ดึงข้อมูลราคามาคำนวณ RSI จริงๆ"""
+    try:
+        hist = yf.Ticker(ticker).history(period="1mo")
+        if len(hist) < period: return 50.0
+        delta = hist['Close'].diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+        avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        return round(rsi.iloc[-1], 2)
+    except:
+        return 50.0
+
+def get_real_fear_and_greed():
+    """ดึงค่า F&G ของจริงจาก CNN"""
+    url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    try:
+        res = requests.get(url, headers=headers, timeout=5)
+        data = res.json()
+        score = int(data['fear_and_greed']['score'])
+        rating = data['fear_and_greed']['rating']
+        return score, rating.upper()
+    except:
+        return 50, "NEUTRAL"
+
+def get_analyst_target(ticker):
+    """ดึงเป้าหมายราคานักวิเคราะห์ของจริง"""
+    try:
+        info = yf.Ticker(ticker).info
+        current = info.get('currentPrice', info.get('regularMarketPrice', 0))
+        target = info.get('targetMeanPrice', 0)
+        if target > 0 and current > 0:
+            upside = ((target - current) / current) * 100
+            return target, round(upside, 2)
+        return 0.0, 0.0
+    except:
+        return 0.0, 0.0
+
+def get_real_sector_rotation():
+    """เช็คกระแสเงินไหลเข้า Sector ผ่าน ETF ของจริง"""
+    sectors = {'Tech': 'XLK', 'Health': 'XLV', 'Finance': 'XLF', 'Energy': 'XLE', 'Consumer': 'XLY'}
+    rotation = []
+    for name, sym in sectors.items():
+        try:
+            hist = yf.Ticker(sym).history(period="5d")
+            if len(hist) >= 2:
+                flow = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
+                rotation.append({'sector': name, 'flow_pct': round(flow, 2)})
+        except: continue
+    rotation.sort(key=lambda x: x['flow_pct'], reverse=True)
+    return rotation
