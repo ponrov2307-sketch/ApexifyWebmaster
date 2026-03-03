@@ -105,7 +105,7 @@ numpy==2.4.2
 oauthlib==3.3.1
 openpyxl==3.1.5
 orjson==3.11.7
-packaging==23.2
+packaging==25.0
 pandas==2.3.3
 peewee==3.19.0
 pefile==2024.8.26
@@ -200,4 +200,5 @@ yarl==1.22.0
 yfinance==1.2.0
 yt-dlp==2026.2.21
 zstandard==0.25.0
+
 
