@@ -35,7 +35,7 @@ APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
 IS_PRODUCTION = APP_ENV == "production"
 
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
-APP_PORT = _to_int("APP_PORT", 8080)
+APP_PORT = _to_int("APP_PORT", _to_int("PORT", 8080))
 APP_RELOAD = _to_bool("APP_RELOAD", False)
 APP_TITLE = os.getenv("APP_TITLE", "Apex Wealth Master")
 NICEGUI_STORAGE_SECRET = os.getenv("NICEGUI_STORAGE_SECRET", "")
