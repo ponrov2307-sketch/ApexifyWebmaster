@@ -1,15 +1,16 @@
-from nicegui import ui, app, run
+﻿from nicegui import ui, app, run
 from core.config import COLORS
 import random
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, UTC
 import asyncio
 from datetime import timedelta
+from urllib.parse import quote_plus
 # Components & Services
 from web.components import charts
 from web.components.ticker import create_ticker
 from web.components.stats import create_stats_cards
-from web.components.table import create_portfolio_table
+from web.components.table import create_portfolio_table, get_logo_url_for_ticker
 from web.components.charts import show_candlestick_chart
 from services.yahoo_finance import get_sparkline_data, get_live_price, update_global_cache_batch, get_real_dividend_data, get_portfolio_historical_growth
 from services.news_fetcher import fetch_stock_news_summary
@@ -25,15 +26,25 @@ from web.router import standard_page_frame
 # ==========================================
 ui.add_head_html('''
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&family=Sora:wght@600;700;800&display=swap');
         :root {
-            --q-primary: #FCD535; /* สีเหลืองสไตล์กระดานเทรด */
-            --q-dark: #0B0E11;    
-            --q-dark-page: #0B0E11;
+            --q-primary: #3FD0FF;
+            --q-dark: #060B12;
+            --q-dark-page: #060B12;
+            --ax-bg: #060B12;
+            --ax-surface: #0D1620;
+            --ax-surface-2: #111E2A;
+            --ax-accent: #56D3FF;
+            --ax-accent-2: #5CF2C8;
+            --ax-positive: #4CE2BC;
+            --ax-negative: #FF5E6C;
+            --ax-text-muted: #8DA4B5;
         }
         body, .q-layout, .q-page-container, .q-page { 
-            background-color: #0B0E11 !important; 
+            background-color: var(--ax-bg) !important;
+            background-image: radial-gradient(circle at 80% -10%, rgba(86, 211, 255, 0.11), transparent 44%), radial-gradient(circle at 10% 10%, rgba(92, 242, 200, 0.09), transparent 38%) !important;
             color: #EAECEF !important;
-            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+            font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
         }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: #0B0E11; }
@@ -41,22 +52,22 @@ ui.add_head_html('''
         ::-webkit-scrollbar-thumb:hover { background: #848E9C; }
 
         .q-dialog__inner > div {
-            background: #181A20 !important;
-            border: 1px solid #2B3139 !important;
-            border-radius: 16px !important;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.9) !important;
+            background: #0D1620 !important;
+            border: 1px solid rgba(86,211,255,0.18) !important;
+            border-radius: 18px !important;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.72) !important;
         }
 
         .q-field--outlined .q-field__control {
-            border-radius: 8px !important;
-            background: #0B0E11 !important;
-            border: 1px solid #2B3139 !important;
+            border-radius: 12px !important;
+            background: #0A131B !important;
+            border: 1px solid rgba(141,164,181,0.25) !important;
         }
         .q-field--outlined.q-field--focused .q-field__control {
-            border-color: #FCD535 !important;
+            border-color: var(--ax-accent) !important;
             box-shadow: none !important;
         }
-        ::selection { background: #FCD535; color: #000; }
+        ::selection { background: var(--ax-accent); color: #00140f; }
         .q-page-container { padding-top: 0 !important; }
     </style>
 ''', shared=True)
@@ -67,6 +78,11 @@ def apply_global_style():
 
 ui.add_head_html('''
     <style>
+        @keyframes aurora-drift {
+            0% { transform: translate3d(0, 0, 0) scale(1); }
+            50% { transform: translate3d(30px, -20px, 0) scale(1.08); }
+            100% { transform: translate3d(0, 0, 0) scale(1); }
+        }
         @keyframes pulse-green {
             0%, 100% { text-shadow: 0 0 0px transparent; color: #32D74B; }
             50% { text-shadow: 0 0 15px rgba(50,215,75,0.6); color: #D0FD3E; }
@@ -95,6 +111,150 @@ ui.add_head_html('''
 
         .blink-green { animation: pulse-green 2s infinite ease-in-out; }
         .blink-red { animation: pulse-red 2s infinite ease-in-out; }
+
+        .ax-card {
+            background: linear-gradient(180deg, rgba(14, 25, 35, 0.9), rgba(9, 16, 24, 0.92));
+            border: 1px solid rgba(120, 153, 176, 0.2);
+            border-radius: 22px;
+            backdrop-filter: blur(14px);
+            box-shadow: 0 14px 34px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+        .ax-card-hover {
+            transition: all 0.25s ease;
+        }
+        .ax-card-hover:hover {
+            border-color: rgba(86, 211, 255, 0.4);
+            box-shadow: 0 18px 42px rgba(4, 12, 18, 0.68), 0 0 24px rgba(86, 211, 255, 0.12);
+            transform: translateY(-3px);
+        }
+        .ax-pill {
+            border-radius: 9999px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.04);
+        }
+        .ax-accent-btn {
+            background: linear-gradient(90deg, var(--ax-accent), var(--ax-accent-2));
+            color: #06201d;
+            font-weight: 900;
+        }
+        .ax-ghost-btn {
+            border: 1px solid rgba(57, 200, 255, 0.35);
+            color: #8bdfff;
+            background: rgba(57, 200, 255, 0.08);
+        }
+        .ax-gradient-bg {
+            position: relative;
+            overflow: hidden;
+        }
+        .ax-gradient-bg::before {
+            content: "";
+            position: absolute;
+            inset: -30% auto auto -20%;
+            width: 320px;
+            height: 320px;
+            border-radius: 9999px;
+            pointer-events: none;
+            background: radial-gradient(circle, rgba(32,214,161,0.14), rgba(32,214,161,0));
+            filter: blur(35px);
+        }
+        .q-btn {
+            letter-spacing: 0.02em;
+        }
+        .q-btn:hover {
+            filter: brightness(1.04);
+        }
+        .q-card, .q-menu, .q-dialog__inner > div {
+            border-color: rgba(57, 200, 255, 0.14) !important;
+        }
+        .ax-page-shell {
+            width: 100%;
+            max-width: 1200px;
+            margin-left: auto;
+            margin-right: auto;
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+        .ax-section-title {
+            font-size: 0.78rem;
+            color: #8ea7b6;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            font-weight: 900;
+        }
+        .ax-subtle {
+            color: var(--ax-text-muted);
+        }
+        .ax-soft-border {
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px;
+        }
+        .ax-btn-primary {
+            background: linear-gradient(90deg, #65D8FF, #7EF7CF);
+            color: #042029;
+            font-weight: 900;
+            border-radius: 12px;
+        }
+        .ax-btn-secondary {
+            background: rgba(57,200,255,0.12);
+            color: #9fe7ff;
+            border: 1px solid rgba(57,200,255,0.35);
+            border-radius: 12px;
+            font-weight: 800;
+        }
+        .ax-grid-3 {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            width: 100%;
+        }
+        @media (min-width: 1024px) {
+            .ax-grid-3 {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+        .ax-action-strip {
+            width: 100%;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px;
+            background: rgba(8, 20, 27, 0.68);
+            backdrop-filter: blur(12px);
+            padding: 12px;
+        }
+        .ax-equal-card {
+            min-height: 220px;
+        }
+        .ax-neon-ring {
+            border: 1px solid rgba(86,211,255,0.28) !important;
+            box-shadow: 0 0 0 1px rgba(86,211,255,0.1) inset, 0 10px 30px rgba(0,0,0,0.35), 0 0 35px rgba(86,211,255,0.1);
+        }
+        .ax-hero-glow {
+            position: relative;
+        }
+        .ax-hero-glow::before,
+        .ax-hero-glow::after {
+            content: "";
+            position: absolute;
+            border-radius: 9999px;
+            filter: blur(70px);
+            pointer-events: none;
+            z-index: 0;
+            animation: aurora-drift 10s ease-in-out infinite;
+        }
+        .ax-hero-glow::before {
+            width: 260px;
+            height: 260px;
+            left: -40px;
+            top: -70px;
+            background: rgba(32, 214, 161, 0.2);
+        }
+        .ax-hero-glow::after {
+            width: 300px;
+            height: 300px;
+            right: -50px;
+            bottom: -110px;
+            background: rgba(57, 200, 255, 0.16);
+            animation-delay: 1.8s;
+        }
     </style>
 ''', shared=True)
 
@@ -323,10 +483,8 @@ async def handle_edit(ticker):
     dialog.open()
 async def handle_news(ticker):
     app.storage.client['modal_open'] = True
-    current_price = get_live_price(ticker)
-    clean_ticker = ticker.replace('.BK', '').lower()
-    
-    logo_url = f"https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.{clean_ticker}.com&size=128"
+    current_price = await run.io_bound(get_live_price, ticker)
+    logo_url = get_logo_url_for_ticker(ticker)
 
     # 🌟 ดึงข้อมูลสิทธิ์การใช้งาน
     user_id = app.storage.user.get('telegram_id')
@@ -417,6 +575,99 @@ async def handle_chart(ticker):
     await show_candlestick_chart(ticker)
 
 
+def normalize_series(series):
+    values = [float(v) for v in (series or []) if v is not None]
+    if not values:
+        return []
+    min_v, max_v = min(values), max(values)
+    if max_v <= min_v:
+        return [50.0 for _ in values]
+    return [((v - min_v) / (max_v - min_v)) * 100 for v in values]
+
+
+def parse_expiry_to_days_left(expiry_value):
+    if not expiry_value:
+        return None
+    raw = str(expiry_value).strip()
+    if not raw:
+        return None
+    candidates = ['%d/%m/%Y', '%Y-%m-%d', '%Y-%m-%d %H:%M:%S']
+    dt = None
+    for fmt in candidates:
+        try:
+            dt = datetime.strptime(raw, fmt)
+            break
+        except Exception:
+            continue
+    if dt is None:
+        return None
+    now = datetime.now()
+    return (dt.date() - now.date()).days
+
+
+def build_payment_qr_url():
+    payload = (
+        "ธนาคารกสิกรไทย (KBank)\n"
+        "เลขที่บัญชี: 135-1-344-691\n"
+        "ชื่อบัญชี: นาย เกียรติศักดิ์ วุฒิจันทร์\n"
+        "Apexify PRO/VIP Payment"
+    )
+    return f"https://quickchart.io/qr?size=280&text={quote_plus(payload)}"
+
+
+def redeem_code_from_backend(telegram_id: str, code: str):
+    """Bridge web redeem UI to backend redeem implementation if available."""
+    try:
+        from core.database import redeem_code
+    except Exception:
+        return (False, 'not_available', None, None)
+    try:
+        result = redeem_code(str(telegram_id), str(code).upper())
+        if isinstance(result, tuple):
+            return result
+        return (False, 'invalid_response', None, None)
+    except Exception as e:
+        return (False, f'error:{e}', None, None)
+
+
+def get_matchmaker_universe():
+    return [
+        'NVDA', 'MSFT', 'AAPL', 'GOOGL', 'AMZN', 'META', 'TSLA',
+        'AVGO', 'AMD', 'PLTR', 'JPM', 'V', 'COST', 'NFLX', 'SPY',
+    ]
+
+
+def build_trade_plan(asset: dict) -> dict:
+    ticker = str(asset.get('ticker', 'N/A'))
+    current_price = float(asset.get('last_price', 0) or 0)
+    avg_cost = float(asset.get('avg_cost', 0) or 0)
+    profit_pct = float(asset.get('profit_pct', 0) or 0)
+
+    if profit_pct >= 15:
+        suggested_action = 'TAKE PROFIT'
+        reason = 'กำไรเริ่มสูง ควรทยอยล็อกกำไร / Profit is extended; scale out gradually.'
+    elif profit_pct <= -8:
+        suggested_action = 'CUT LOSS'
+        reason = 'ขาดทุนเกิน threshold ควรควบคุมความเสี่ยง / Loss exceeded threshold; control downside risk.'
+    elif profit_pct < 5:
+        suggested_action = 'WATCH'
+        reason = 'ยังไม่ชัดเจน รอดูทิศทาง / Range-bound; watch confirmation.'
+    else:
+        suggested_action = 'HOLD'
+        reason = 'โมเมนตัมยังพอถือได้ / Momentum is constructive; continue holding.'
+
+    return {
+        'ticker': ticker,
+        'current_price': current_price,
+        'avg_cost': avg_cost,
+        'profit_pct': profit_pct,
+        'suggested_action': suggested_action,
+        'target_price': current_price * 1.08,
+        'stop_loss_price': current_price * 0.94,
+        'reason': reason,
+    }
+
+
 # ==========================================
 # 1. หน้าต่างเข้าสู่ระบบ (LOGIN PAGE)
 # ==========================================
@@ -427,7 +678,7 @@ def login_route():
 
 
 # ==========================================
-# 2. หน้าหลัก (DASHBOARD) - REAL-TIME (มีแถบ Market Mood 🚀)
+# 2. หน้าหลัก (DASHBOARD) - REAL-TIME
 # ==========================================
 @ui.page('/')
 @standard_page_frame
@@ -464,6 +715,7 @@ async def main_page(client):
         
         expiry = user_info.get('vip_expiry')
         status_txt = f'Valid till: {expiry}' if expiry and role in ['PRO', 'VIP', 'ADMIN'] else t_status
+        days_left = parse_expiry_to_days_left(expiry)
 
         raw_portfolio = await run.io_bound(get_portfolio, user_id) if user_id else []
         
@@ -485,17 +737,12 @@ async def main_page(client):
             avg_cost = float(item['avg_cost'])
             
             # 🌟 ดึงราคาแบบ Real-time และ กราฟ Sparkline
-            from services.yahoo_finance import get_live_price, get_sparkline_data
             last_price = await run.io_bound(get_live_price, ticker)
             sparkline_data, is_up = await run.io_bound(get_sparkline_data, ticker)
             
             # 🌟 [เพิ่มโค้ดนี้] บังคับกราฟเส้นให้หยักสุดขีด (Normalize 0-100)
             if sparkline_data and len(sparkline_data) > 0:
-                min_p, max_p = min(sparkline_data), max(sparkline_data)
-                if max_p > min_p:
-                    sparkline_data = [((p - min_p) / (max_p - min_p)) * 100 for p in sparkline_data]
-                else:
-                    sparkline_data = [50] * len(sparkline_data)
+                sparkline_data = normalize_series(sparkline_data)
             current_value = shares * last_price
             invested = shares * avg_cost
             profit = current_value - invested
@@ -535,10 +782,11 @@ async def main_page(client):
         top_loser = profit_sorted[-1] if profit_sorted and profit_sorted[-1]['profit_pct'] < 0 else None
 
         # ==========================================
-        # 🌟 3. MARKET MOOD (FEAR & GREED INDEX)
+        # 🌟 3. Sidebar pulse data (Fear & Greed + VIX)
         # ==========================================
         from services.yahoo_finance import get_real_fear_and_greed
         real_fg_value, real_fg_label = await run.io_bound(get_real_fear_and_greed)
+        vix = await run.io_bound(get_live_price, '^VIX') or 0.0
         
         fg_value = real_fg_value
         
@@ -563,14 +811,25 @@ async def main_page(client):
             fg_label = 'EXTREME GREED'
             fg_advice = '⚠️ ระวังการปรับฐาน'
 
+        sidebar_pulse = {
+            'fg_value': float(fg_value),
+            'fg_label': fg_label,
+            'vix': float(vix),
+            'mood_color': fg_color,
+            'updated_at': datetime.now(UTC).isoformat(),
+        }
+        app.storage.client['sidebar_pulse'] = sidebar_pulse
+
         # ส่งข้อมูลทั้งหมดไปแสดงผล
         return {
             't_welcome': t_welcome, 't_status': t_status, 't_port_val': t_port_val, 't_add_btn': t_add_btn, 't_curr_port': t_curr_port,
             'username': username, 'role': role, 'role_color': role_color, 'status_txt': status_txt,
-            'curr_sym': curr_sym, 'current_group': current_group,
+            'vip_expiry': expiry, 'days_left': days_left,
+            'curr_sym': curr_sym, 'curr_rate': curr_rate, 'current_group': current_group,
             'net_worth': net_worth, 'total_profit': total_profit, 'total_invested': total_invested, 'is_profit_overall': is_profit_overall,
             'top_gainer': top_gainer, 'top_loser': top_loser,
             'fg_value': fg_value, 'fg_label': fg_label, 'fg_color': fg_color, 'fg_advice': fg_advice,
+            'sidebar_pulse': sidebar_pulse,
             'sorted_assets': sorted_assets
         }
 
@@ -578,10 +837,10 @@ async def main_page(client):
     ui_refs = {}
 
     # 🌟 จุดที่ 1: ปรับระยะขอบบนเป็น pt-[110px] เพื่อหลบแถบวิ่งให้สวยงาม
-    with ui.column().classes('w-full max-w-7xl mx-auto p-2 sm:p-4 md:p-8 gap-4 md:gap-6 pt-[110px] md:pt-[120px]'):
+    with ui.column().classes('ax-page-shell w-full max-w-7xl mx-auto p-2 sm:p-4 md:p-8 gap-4 md:gap-6 pt-[110px] md:pt-[120px]'):
         
        # 💳 กล่องมูลค่าพอร์ต
-        with ui.row().classes('w-full justify-between items-center bg-gradient-to-br from-[#12161E] to-[#0B0E14] border border-white/5 p-6 md:p-10 rounded-[32px] shadow-[0_10px_40px_rgba(0,0,0,0.5)] relative overflow-hidden'):
+        with ui.row().classes('w-full justify-between items-center bg-gradient-to-br from-[#12161E] to-[#0B0E14] border border-white/5 p-6 md:p-10 rounded-[32px] shadow-[0_10px_40px_rgba(0,0,0,0.5)] relative overflow-hidden ax-hero-glow ax-neon-ring'):
             ui.element('div').classes('absolute -top-32 -left-32 w-96 h-96 bg-[#D0FD3E]/10 rounded-full blur-[100px] pointer-events-none')
 
             with ui.column().classes('gap-1 z-10 flex-1'):
@@ -608,9 +867,9 @@ async def main_page(client):
                 # 🌟 เติม tabular-nums เข้าไปตรงนี้ด้วย
                 ui_refs['total_profit'] = ui.label(f'{"▲" if d["is_profit_overall"] else "▼"} {d["curr_sym"]}{abs(d["total_profit"]):,.2f} ({sign}{pct:.2f}%)').classes(f'tabular-nums text-lg md:text-2xl font-black mt-2 {color_class} drop-shadow-md')
 
-        # 📦 กลุ่มการ์ด 3 ใบ (Profile, Group, Market Mood)
-        with ui.row().classes('w-full gap-4 md:gap-6 items-stretch flex-col md:flex-row'):
-            with ui.row().classes('flex-1 items-center bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] border border-white/5 shadow-lg gap-4 transition-all hover:border-white/10'):
+        # 📦 กลุ่มการ์ด 3 ใบ (Profile, Group, VIP Command Center)
+        with ui.element('div').classes('ax-grid-3'):
+            with ui.row().classes('items-center bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] border border-white/5 shadow-lg gap-4 transition-all hover:border-white/10 ax-card-hover h-full'):
                 ui.icon('account_circle', size='xl').classes(d['role_color'])
                 with ui.column().classes('gap-0'):
                     ui.label(d['t_welcome']).classes('text-[10px] text-gray-500 font-bold uppercase tracking-wider')
@@ -621,48 +880,64 @@ async def main_page(client):
                 app.storage.client['dashboard_group'] = e.value
                 await smart_update() # รันทันที ปลอดภัย 100%
 
-            with ui.column().classes('flex-1 justify-center bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] border border-white/5 shadow-lg transition-all hover:border-white/10'):
+            with ui.column().classes('justify-center bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] border border-white/5 shadow-lg transition-all hover:border-white/10 ax-card-hover h-full'):
                 ui.label(d['t_curr_port']).classes('text-[10px] text-gray-500 font-black tracking-widest uppercase mb-2')
                 ui.select(['ALL', 'DCA', 'TRADING', 'DIV'], value=d['current_group'], on_change=change_portfolio_group).classes('w-full font-bold').props('outlined dark dense rounded behavior="menu"')
 
-            with ui.column().classes('flex-1 justify-center bg-gradient-to-br from-[#161B22] to-[#0B0E14] p-5 md:p-6 rounded-[24px] border border-white/5 shadow-lg relative overflow-hidden transition-all hover:border-white/10 min-w-0'):
-                ui.label('MARKET MOOD').classes('text-[10px] text-gray-500 font-black tracking-widest uppercase mb-1 z-10')
-                
-                # 🌟 กราฟหน้าปัดครึ่งวงกลม (Gauge Chart) เรืองแสง
-                ui_refs['fg_chart'] = ui.echart({
-                    'series': [{
-                        'type': 'gauge',
-                        'startAngle': 180, 'endAngle': 0,
-                        'min': 0, 'max': 100,
-                        'radius': '100%',
-                        'center': ['50%', '70%'],
-                        'itemStyle': {
-                            'color': d['fg_color'],
-                            'shadowColor': d['fg_color'],
-                            'shadowBlur': 10,
-                        },
-                        'progress': {'show': True, 'roundCap': True, 'width': 12},
-                        'pointer': {'show': False},
-                        'axisLine': {'roundCap': True, 'lineStyle': {'width': 12, 'color': [[1, '#1C2128']]}},
-                        'axisTick': {'show': False}, 'splitLine': {'show': False}, 'axisLabel': {'show': False},
-                        'detail': {
-                            'valueAnimation': True,
-                            'offsetCenter': [0, '-20%'],
-                            'fontSize': 32,
-                            'fontWeight': 'black',
-                            'color': d['fg_color'],
-                            'formatter': '{value}'
-                        },
-                        'data': [{'value': d['fg_value']}]
-                    }]
-                }).classes('w-full h-[100px] z-10 -mt-2 -mb-2')
+            with ui.column().classes('justify-center bg-gradient-to-br from-[#161B22] to-[#0B0E14] p-5 md:p-6 rounded-[24px] border border-[#20D6A1]/20 shadow-lg relative overflow-hidden transition-all hover:border-[#39C8FF]/40 min-w-0 ax-neon-ring ax-card-hover h-full'):
+                ui.label('VIP COMMAND CENTER').classes('text-[10px] text-[#39C8FF] font-black tracking-widest uppercase mb-1 z-10')
+                membership_role = d.get('role', 'FREE')
+                days_left = d.get('days_left')
+                days_text = f'{days_left} DAYS LEFT' if isinstance(days_left, int) and days_left >= 0 else 'NO ACTIVE PACKAGE'
+                days_color = 'text-[#2FE8A8]' if isinstance(days_left, int) and days_left >= 0 else 'text-[#FFFF33]'
+                ui_refs['vip_days'] = ui.label(days_text).classes(f'text-xl md:text-2xl font-black {days_color}')
+                ui_refs['vip_status'] = ui.label(f'{membership_role} MEMBER').classes('text-[10px] text-gray-400 font-black tracking-wider')
 
-                with ui.row().classes('w-full justify-between items-center z-10 mt-2'):
-                    ui_refs['fg_label'] = ui.label(d['fg_label']).style(f"color: {d['fg_color']};").classes('text-[11px] font-black tracking-widest uppercase drop-shadow-md')
-                    ui_refs['fg_advice'] = ui.label(d.get('fg_advice', '')).classes('text-[10px] text-gray-400 font-bold')
+                redeem_input = ui.input(placeholder='REDEEM CODE').props('dense outlined dark').classes('w-full mt-2')
 
-        # 🌟 จุดที่ 2: โซนเพิ่มสินทรัพย์ ย้ายมาอยู่ใต้ Market Mood
-        with ui.row().classes('w-full justify-between items-center md:items-end mt-4 mb-2 gap-4 flex-col md:flex-row'):
+                async def redeem_from_web():
+                    code = (redeem_input.value or '').strip().upper()
+                    if not code:
+                        ui.notify('กรุณากรอกโค้ดก่อน', type='warning')
+                        return
+                    tid = app.storage.user.get('telegram_id')
+                    if not tid:
+                        ui.notify('ไม่พบ Telegram ID สำหรับบัญชีนี้', type='negative')
+                        return
+                    result = await run.io_bound(redeem_code_from_backend, str(tid), code)
+                    try:
+                        success, _, expiry, role_type = result
+                    except Exception:
+                        success = False
+                        expiry = None
+                        role_type = None
+                    if success:
+                        ui.notify(f'Redeem สำเร็จ: {str(role_type).upper()} ถึง {expiry}', type='positive')
+                        ui.navigate.reload()
+                    else:
+                        if isinstance(result, tuple) and len(result) > 1 and result[1] == 'not_available':
+                            ui.notify('ระบบ Redeem backend ยังไม่พร้อมในรอบนี้', type='warning')
+                        else:
+                            ui.notify('โค้ดไม่ถูกต้อง หรือถูกใช้งานแล้ว', type='negative')
+
+                with ui.row().classes('w-full gap-2 mt-2'):
+                    ui.button('Redeem', on_click=redeem_from_web).props('dense').classes('flex-1 bg-[#20D6A1] text-black font-black rounded-lg text-xs')
+
+                    def show_qr_dialog():
+                        with ui.dialog() as renew_dialog, ui.card().classes('w-full max-w-md bg-[#0E1C24] border border-[#39C8FF]/30 rounded-3xl p-6'):
+                            ui.label('RENEW PRO / VIP').classes('text-lg font-black text-[#39C8FF] tracking-wider')
+                            ui.image(build_payment_qr_url()).classes('w-56 h-56 mx-auto mt-2 rounded-xl bg-white p-2')
+                            ui.label('KBank 135-1-344-691').classes('text-sm text-white font-black text-center')
+                            ui.label('นาย เกียรติศักดิ์ วุฒิจันทร์').classes('text-xs text-gray-400 text-center')
+                            ui.label('Scan QR to pay and renew package instantly').classes('text-xs text-gray-400 text-center')
+                            ui.button('Go Payment Page', on_click=lambda: ui.navigate.to('/payment')).classes('w-full mt-3 bg-[#20D6A1] text-black font-black rounded-xl py-2')
+                            ui.button('Close', on_click=renew_dialog.close).props('flat').classes('w-full text-gray-400')
+                        renew_dialog.open()
+
+                    ui.button('Renew', on_click=show_qr_dialog).props('dense').classes('flex-1 bg-[#39C8FF]/20 text-[#39C8FF] font-black rounded-lg text-xs border border-[#39C8FF]/40')
+
+        # 🌟 จุดที่ 2: โซนเพิ่มสินทรัพย์ ย้ายมาอยู่ใต้ VIP Command Center
+        with ui.row().classes('ax-action-strip justify-between items-center md:items-end mt-1 mb-2 gap-4 flex-col md:flex-row'):
             with ui.row().classes('gap-3 items-center w-full md:w-auto'):
                 with ui.row().classes('bg-[#32D74B]/10 border border-[#32D74B]/30 rounded-full px-4 py-1.5 items-center gap-2 shadow-inner') as ui_refs['box_gainer']:
                     ui.icon('trending_up', size='sm').classes('text-[#32D74B]')
@@ -674,7 +949,7 @@ async def main_page(client):
                     ui.label('TOP LOSER').classes('text-[9px] text-[#FF453A] font-black tracking-widest hidden sm:block')
                     ui_refs['lbl_loser'] = ui.label('').classes('tabular-nums text-xs md:text-sm font-bold text-white')
             
-            with ui.row().classes('gap-2 items-center w-full md:w-auto mt-4 md:mt-0'):
+            with ui.row().classes('gap-2 items-center w-full md:w-auto mt-1 md:mt-0'):
                 # 1. ปุ่ม Add Asset (ของเดิม)
                 ui.button(d['t_add_btn'], on_click=handle_add_asset, icon='add').classes('w-full md:w-auto bg-[#D0FD3E] text-black font-black rounded-full px-8 py-3 shadow-[0_0_20px_rgba(208,253,62,0.4)] hover:scale-105 transition-transform text-sm')
                 
@@ -720,8 +995,103 @@ async def main_page(client):
                 # ปุ่มกด AI
                 ui.button('🤖 AI REBALANCE', on_click=run_ai_rebalance).classes('w-full md:w-auto bg-gradient-to-r from-purple-600 to-indigo-500 text-white font-black rounded-full px-6 py-3 shadow-[0_0_20px_rgba(147,51,234,0.4)] hover:scale-105 transition-transform text-sm')
 
+        def render_trade_plan_panel(panel_assets, role, curr_sym, curr_rate):
+            is_pro_plan = str(role).upper() in ['PRO', 'VIP', 'ADMIN']
+            holdings_count = len(panel_assets or [])
+
+            with ui.column().classes('w-full ax-card ax-card-hover ax-gradient-bg p-5 md:p-6 gap-4'):
+                with ui.row().classes('w-full justify-between items-center flex-wrap gap-3'):
+                    with ui.column().classes('gap-0'):
+                        ui.label('PRO TRADE PLAN BUILDER').classes('text-xs md:text-sm font-black text-[#20D6A1] tracking-widest uppercase')
+                        ui.label('Heuristic decision guide for each holding').classes('text-[10px] text-gray-500 font-bold tracking-wide')
+                    lock_text = 'UNLOCKED' if is_pro_plan else 'PRO FEATURE'
+                    lock_class = 'text-[#32D74B] border-[#32D74B]/30 bg-[#32D74B]/10' if is_pro_plan else 'text-[#FCD535] border-[#FCD535]/30 bg-[#FCD535]/10'
+                    ui.label(lock_text).classes(f'text-[10px] font-black tracking-widest px-3 py-1 rounded-full border {lock_class}')
+
+                if not is_pro_plan:
+                    with ui.row().classes('w-full items-center justify-between gap-4 bg-[#0B0E14]/70 border border-white/5 rounded-2xl p-4 flex-col md:flex-row'):
+                        with ui.column().classes('gap-1'):
+                            ui.label('🔒 PRO ONLY').classes('text-sm font-black text-[#FCD535] tracking-widest')
+                            ui.label(f'พบ {holdings_count} holdings ในพอร์ตของคุณ พร้อมสร้างแผนได้ทันทีเมื่ออัปเกรด').classes('text-xs text-gray-400')
+                        ui.button('UPGRADE TO PRO', on_click=lambda: ui.navigate.to('/payment')).classes('bg-[#FCD535] text-black font-black px-6 py-2 rounded-full text-xs shadow-lg hover:scale-105')
+                    return
+
+                if not panel_assets:
+                    with ui.column().classes('w-full items-center justify-center p-6 rounded-2xl bg-[#0B0E14]/50 border border-white/5'):
+                        ui.label('ยังไม่มีสินทรัพย์ในพอร์ตสำหรับสร้างแผน / No holdings available.').classes('text-sm text-gray-400 font-bold')
+                    return
+
+                action_theme = {
+                    'TAKE PROFIT': ('text-[#32D74B]', 'bg-[#32D74B]/10 border-[#32D74B]/30'),
+                    'CUT LOSS': ('text-[#FF453A]', 'bg-[#FF453A]/10 border-[#FF453A]/30'),
+                    'WATCH': ('text-[#FCD535]', 'bg-[#FCD535]/10 border-[#FCD535]/30'),
+                    'HOLD': ('text-[#8AB4FF]', 'bg-[#8AB4FF]/10 border-[#8AB4FF]/30'),
+                }
+
+                with ui.grid(columns='grid-cols-1 xl:grid-cols-2').classes('w-full gap-4'):
+                    for asset in panel_assets:
+                        plan = build_trade_plan(asset)
+                        ticker = plan['ticker']
+                        current_price = plan['current_price'] * curr_rate
+                        avg_cost = plan['avg_cost'] * curr_rate
+                        target_price = plan['target_price'] * curr_rate
+                        stop_loss_price = plan['stop_loss_price'] * curr_rate
+                        profit_pct = plan['profit_pct']
+                        suggested_action = plan['suggested_action']
+                        reason = plan['reason']
+                        txt_class, badge_class = action_theme.get(suggested_action, ('text-gray-300', 'bg-white/5 border-white/10'))
+
+                        with ui.column().classes('w-full bg-[#0B0E14]/70 border border-white/5 rounded-2xl p-4 gap-3 shadow-inner'):
+                            with ui.row().classes('w-full justify-between items-start'):
+                                with ui.column().classes('gap-0'):
+                                    ui.label(ticker).classes('text-xl font-black text-white tracking-wider')
+                                    ui.label(f'Current {curr_sym}{current_price:,.2f} • Avg {curr_sym}{avg_cost:,.2f}').classes('text-[11px] text-gray-500 font-bold')
+                                ui.label(suggested_action).classes(f'text-[10px] font-black tracking-widest px-3 py-1 rounded-full border {txt_class} {badge_class}')
+
+                            with ui.row().classes('w-full justify-between items-center gap-3 flex-wrap'):
+                                pnl_class = 'text-[#32D74B]' if profit_pct >= 0 else 'text-[#FF453A]'
+                                ui.label(f'Profit {profit_pct:+.2f}%').classes(f'text-sm font-black {pnl_class}')
+                                ui.label(f'Target {curr_sym}{target_price:,.2f}').classes('text-xs text-[#32D74B] font-bold')
+                                ui.label(f'Stop {curr_sym}{stop_loss_price:,.2f}').classes('text-xs text-[#FF453A] font-bold')
+
+                            ui.label(reason).classes('text-xs text-gray-400 leading-relaxed')
+
+                            with ui.row().classes('w-full gap-2 mt-1'):
+                                async def create_alert_from_plan(sym=ticker, target=plan['target_price']):
+                                    user_id = app.storage.user.get('user_id')
+                                    if not user_id:
+                                        ui.notify('ไม่พบ user session สำหรับสร้าง alert', type='warning')
+                                        return
+                                    try:
+                                        await run.io_bound(set_user_price_alert, str(user_id), sym, float(target), '>')
+                                        ui.notify(f'สร้าง Alert ให้ {sym} แล้ว (Target {target:,.2f}) ดูได้ที่หน้า /alerts', type='positive')
+                                    except Exception as e:
+                                        ui.notify(f'สร้าง Alert ไม่สำเร็จ: {e}', type='negative')
+
+                                ui.button('Create Alert', icon='notifications_active', on_click=create_alert_from_plan).props('outline dense').classes('flex-1 border-[#FCD535]/40 text-[#FCD535] font-black rounded-lg text-xs')
+                                ui.button('View Chart', icon='candlestick_chart', on_click=lambda t=ticker: ui.timer(0.1, lambda: handle_chart(t), once=True)).props('dense').classes('flex-1 bg-[#D0FD3E] text-black font-black rounded-lg text-xs')
+
+        trade_plan_container = ui.column().classes('w-full mt-2')
+        with trade_plan_container:
+            render_trade_plan_panel(
+                d.get('sorted_assets', []),
+                d.get('role', 'FREE'),
+                d.get('curr_sym', '$'),
+                d.get('curr_rate', 1.0),
+            )
+
+        def refresh_trade_plan_panel(next_data):
+            trade_plan_container.clear()
+            with trade_plan_container:
+                render_trade_plan_panel(
+                    next_data.get('sorted_assets', []),
+                    next_data.get('role', 'FREE'),
+                    next_data.get('curr_sym', '$'),
+                    next_data.get('curr_rate', 1.0),
+                )
+
         with ui.row().classes('w-full justify-between items-center mt-6 mb-2 border-b border-white/5 pb-2'):
-            ui.label('YOUR HOLDINGS').classes('text-sm font-black text-gray-500 tracking-widest uppercase')
+            ui.label('YOUR HOLDINGS').classes('ax-section-title')
             
             with ui.row().classes('gap-2 bg-white/5 p-1 rounded-lg border border-white/10 shadow-inner'):
                 def set_sort(key):
@@ -753,7 +1123,13 @@ async def main_page(client):
                 elif sort_key == 'total_value': assets_to_show = sorted(assets_to_show, key=lambda x: x['shares'] * x['last_price'], reverse=sort_desc)
 
             # 🌟 ส่ง ui_refs เข้าไปด้วย เพื่อผูกหน้าจอ
-            create_portfolio_table(assets_to_show, on_edit=handle_edit, on_news=handle_news, on_chart=handle_chart, ui_refs=ui_refs)
+            create_portfolio_table(
+                assets_to_show,
+                on_edit=handle_edit,
+                on_news=handle_news,
+                on_chart=handle_chart,
+                ui_refs=ui_refs,
+            )
             
         # สร้างกล่อง (เคลียร์ของเก่าทิ้งก่อนวาดใหม่เมื่อกดปุ่ม Sort)
         table_container = ui.column().classes('w-full')
@@ -777,9 +1153,13 @@ async def main_page(client):
             top_gainer = meta.get('top_gainer')
             top_loser = meta.get('top_loser')
 
-            fg_label = meta.get('fg_label', 'NEUTRAL')
-            fg_color = meta.get('fg_color', '#8B949E')
-            fg_advice = meta.get('fg_advice', '')
+            member_role = str(meta.get('role', 'FREE')).upper()
+            days_left = meta.get('days_left')
+            membership_line = (
+                f'{days_left} days left'
+                if isinstance(days_left, int) and days_left >= 0
+                else 'No active package'
+            )
 
             # ใช้ curr_sym ที่ส่งเข้ามา เพื่อให้ popup ตรงกับ dashboard
             curr_rate = 34.5 if curr_sym == '฿' else 1.0
@@ -843,10 +1223,10 @@ async def main_page(client):
                                 ).classes('text-sm font-black tracking-wide').style(f'color: {p_color};')
 
                         # =========================
-                        # 2) MARKET SNAPSHOT
+                        # 2) PORTFOLIO SNAPSHOT
                         # =========================
                         with ui.column().classes('w-full px-6 pt-4 gap-3'):
-                            ui.label('MARKET SNAPSHOT').classes(
+                            ui.label('PORTFOLIO SNAPSHOT').classes(
                                 'text-[10px] text-gray-500 font-bold tracking-widest uppercase'
                             )
 
@@ -891,10 +1271,10 @@ async def main_page(client):
                                 'w-full justify-between items-center rounded-2xl '
                                 'px-4 py-3 border border-white/5 bg-white/5'
                             ):
-                                ui.label(fg_label).classes(
-                                    'text-[11px] font-black tracking-widest'
-                                ).style(f'color: {fg_color};')
-                                ui.label(fg_advice).classes(
+                                ui.label(f'{member_role} MEMBER').classes(
+                                    'text-[11px] font-black tracking-widest text-[#39C8FF]'
+                                )
+                                ui.label(membership_line).classes(
                                     'text-[10px] text-gray-400 font-bold text-right'
                                 )
 
@@ -1030,18 +1410,17 @@ async def main_page(client):
         
         if app.storage.client.get('modal_open', False): return
         nd = await load_dashboard_data()
-        
-        # 1. 🌟 อัปเดต Market Mood (ให้เข็มไมล์วิ่งอัตโนมัติ)
-        ui_refs['fg_label'].set_text(nd['fg_label'])               # บรรทัดที่ 1: เปลี่ยนข้อความ
-        ui_refs['fg_label'].style(f"color: {nd['fg_color']};")     # บรรทัดที่ 2: เปลี่ยนสี
-        ui_refs['fg_advice'].set_text(nd.get('fg_advice', ''))
-        
-        ui_refs['fg_chart'].options['series'][0]['data'][0]['value'] = nd['fg_value']
-        ui_refs['fg_chart'].options['series'][0]['itemStyle']['color'] = nd['fg_color']
-        ui_refs['fg_chart'].options['series'][0]['itemStyle']['shadowColor'] = nd['fg_color']
-        ui_refs['fg_chart'].options['series'][0]['detail']['color'] = nd['fg_color']
-        ui_refs['fg_chart'].update()
-        
+
+        # 1. อัปเดต VIP Command Center
+        days_left = nd.get('days_left')
+        days_text = f'{days_left} DAYS LEFT' if isinstance(days_left, int) and days_left >= 0 else 'NO ACTIVE PACKAGE'
+        days_color = 'text-[#2FE8A8]' if isinstance(days_left, int) and days_left >= 0 else 'text-[#FF5E6C]'
+        if 'vip_days' in ui_refs:
+            ui_refs['vip_days'].set_text(days_text)
+            ui_refs['vip_days'].classes(remove='text-[#2FE8A8] text-[#FF5E6C]', add=days_color)
+        if 'vip_status' in ui_refs:
+            ui_refs['vip_status'].set_text(f"{nd.get('role', 'FREE')} MEMBER")
+
         # 2. 🌟 อัปเดตยอดเงิน (พร้อมเช็คการเปลี่ยนแปลงเพื่อเล่นอนิเมชั่น)
         old_nw = app.storage.client.get('last_nw', 0)
         new_nw = nd['net_worth']
@@ -1087,6 +1466,8 @@ async def main_page(client):
         new_tickers = [a['ticker'] for a in nd['sorted_assets']]
         
         d['sorted_assets'] = nd['sorted_assets']
+        d['sidebar_pulse'] = nd.get('sidebar_pulse', {})
+        refresh_trade_plan_panel(nd)
         
         if current_tickers != new_tickers:
             trigger_sort_refresh() # ถ้ามีการเพิ่ม/ลบหุ้น ให้วาดใหม่
@@ -1353,7 +1734,7 @@ async def dividend_page():
         for item in raw_portfolio:
             ticker = item['ticker']
             shares = float(item['shares'])
-            price = get_live_price(ticker)
+            price = await run.io_bound(get_live_price, ticker)
             val = shares * price
             
             div_info = real_div_data.get(ticker, {})
@@ -1635,7 +2016,143 @@ async def sp500_page():
             }).classes('w-full h-full z-10')
 
 # ==========================================
-# 7. ระบบ Export Excel (ดาวน์โหลดไฟล์) - Premium UI
+# 7. AI STOCK MATCHMAKER (TINDER STYLE)
+# ==========================================
+@ui.page('/matchmaker')
+@standard_page_frame
+async def matchmaker_page():
+    create_ticker()
+
+    tid = app.storage.user.get('telegram_id')
+    user_info = await run.io_bound(get_user_by_telegram, tid) if tid else {}
+    role = str(user_info.get('role', 'free')).lower()
+    is_pro = role in ['pro', 'vip', 'admin']
+
+    with ui.column().classes('ax-page-shell w-full max-w-5xl mx-auto p-4 md:p-8 gap-5 pt-[110px] md:pt-[120px]'):
+        with ui.row().classes('w-full items-end justify-between flex-col md:flex-row gap-3'):
+            with ui.column().classes('gap-1'):
+                ui.label('AI STOCK MATCHMAKER').classes('text-2xl md:text-4xl font-black text-white tracking-widest uppercase')
+                ui.label('ปัดซ้ายเพื่อข้าม • ปัดขวาเพื่อเพิ่มเข้า Watchlist/Alerts').classes('text-xs md:text-sm text-gray-400')
+            if not is_pro:
+                ui.button('UPGRADE TO PRO', on_click=lambda: ui.navigate.to('/payment')).classes('bg-[#FCD535] text-black font-black rounded-full px-6 py-2 text-xs')
+
+        if not is_pro:
+            with ui.column().classes('w-full ax-card p-8 items-center text-center gap-3'):
+                ui.icon('lock', size='3rem').classes('text-[#FCD535]')
+                ui.label('Feature locked for PRO/VIP').classes('text-lg font-black text-white')
+                ui.label('ปลดล็อก AI Matchmaker เพื่อรับหุ้นที่ AI คัดมาและปัดเก็บได้ทันที').classes('text-sm text-gray-400')
+            return
+
+        universe = get_matchmaker_universe()
+        random.shuffle(universe)
+        queue = universe[:10]
+        state = {'index': 0, 'liked': 0, 'skipped': 0, 'card_cache': {}}
+
+        with ui.row().classes('w-full gap-2'):
+            liked_badge = ui.label('LIKED: 0').classes('text-xs font-black px-3 py-1 rounded-full bg-[#20D6A1]/15 text-[#20D6A1] border border-[#20D6A1]/30')
+            skipped_badge = ui.label('SKIPPED: 0').classes('text-xs font-black px-3 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
+
+        card_container = ui.column().classes('w-full')
+
+        async def get_card_data(symbol: str):
+            if symbol in state['card_cache']:
+                return state['card_cache'][symbol]
+            price = await run.io_bound(get_live_price, symbol)
+            spark, _ = await run.io_bound(get_sparkline_data, symbol)
+            trend_up = bool(spark and len(spark) > 1 and spark[-1] >= spark[0])
+            data = {'price': float(price or 0), 'spark': spark or [], 'trend_up': trend_up}
+            state['card_cache'][symbol] = data
+            return data
+
+        async def render_card():
+            card_container.clear()
+            with card_container:
+                idx = state['index']
+                if idx >= len(queue):
+                    with ui.column().classes('w-full ax-card p-10 items-center text-center gap-3'):
+                        ui.icon('celebration', size='3rem').classes('text-[#20D6A1]')
+                        ui.label('ครบทุกการ์ดแล้ว').classes('text-2xl font-black text-white')
+                        ui.label('กดรีโหลดเพื่อสุ่มรอบใหม่').classes('text-sm text-gray-400')
+                        ui.button('RELOAD CARDS', on_click=lambda: ui.navigate.reload()).classes('bg-[#20D6A1] text-black font-black rounded-full px-6 py-2 text-xs')
+                    return
+
+                ticker = queue[idx]
+                card = await get_card_data(ticker)
+                price = card['price']
+                spark = card['spark']
+                trend_up = card['trend_up']
+                quick_pitch = (
+                    f"- โครงสร้างราคา {'แข็งแรง' if trend_up else 'ยังแกว่ง'}\n"
+                    f"- Risk: ตั้ง Stop-loss ให้ชัดก่อนตัดสินใจ"
+                )
+
+                with ui.column().classes('w-full max-w-2xl mx-auto bg-gradient-to-b from-[#0F1E26] to-[#09131A] border border-[#20D6A1]/25 rounded-[28px] p-6 md:p-8 shadow-[0_15px_40px_rgba(0,0,0,0.45)] gap-4 ax-neon-ring ax-card-hover'):
+                    with ui.row().classes('w-full justify-between items-center'):
+                        ui.label(ticker).classes('text-4xl md:text-5xl font-black text-white tracking-wider')
+                        trend_color = '#20D6A1' if trend_up else '#FF5E6C'
+                        ui.label('UPTREND' if trend_up else 'RISKY').classes('text-[10px] font-black tracking-widest px-3 py-1 rounded-full border').style(f'color:{trend_color}; border-color:{trend_color}55; background:{trend_color}18;')
+                    ui.label(f'Price: ${price:,.2f}').classes('text-lg font-black text-[#39C8FF]')
+                    pitch_md = ui.markdown(quick_pitch).classes('text-sm text-gray-200 leading-relaxed')
+
+                    if spark:
+                        norm = normalize_series(spark)
+                        ui.echart({
+                            'xAxis': {'type': 'category', 'show': False},
+                            'yAxis': {'type': 'value', 'show': False},
+                            'grid': {'left': 0, 'right': 0, 'top': 8, 'bottom': 8},
+                            'series': [{
+                                'type': 'line',
+                                'data': norm,
+                                'smooth': True,
+                                'showSymbol': False,
+                                'lineStyle': {'width': 3, 'color': '#20D6A1' if trend_up else '#FF5E6C'},
+                                'areaStyle': {'opacity': 0.16, 'color': '#20D6A1' if trend_up else '#FF5E6C'},
+                            }]
+                        }).classes('w-full h-24')
+
+                    with ui.row().classes('w-full gap-3 mt-2'):
+                        async def swipe_left():
+                            state['skipped'] += 1
+                            skipped_badge.set_text(f"SKIPPED: {state['skipped']}")
+                            state['index'] += 1
+                            await render_card()
+
+                        async def swipe_right():
+                            user_id = app.storage.user.get('user_id')
+                            target = float(price) * 1.08
+                            if user_id and target > 0:
+                                await run.io_bound(set_user_price_alert, str(user_id), ticker, target, '>')
+                            state['liked'] += 1
+                            liked_badge.set_text(f"LIKED: {state['liked']}")
+                            ui.notify(f'Added {ticker} to watch alerts at ${target:,.2f}', type='positive')
+                            state['index'] += 1
+                            await render_card()
+
+                        ui.button('SWIPE LEFT', icon='close', on_click=swipe_left).classes('flex-1 bg-white/10 text-gray-200 border border-white/15 rounded-xl py-3 font-black')
+                        ui.button('SWIPE RIGHT', icon='favorite', on_click=swipe_right).classes('flex-1 bg-[#20D6A1] text-black rounded-xl py-3 font-black')
+
+                    async def hydrate_ai_pitch(sym=ticker, px=price, tr=trend_up, render_idx=idx):
+                        # Non-blocking AI enhancement: render card instantly, then replace summary.
+                        try:
+                            from services.gemini_ai import generate_stock_matchmaker_pitch
+                            ai_pitch = await run.io_bound(generate_stock_matchmaker_pitch, sym, float(px), tr)
+                            if state['index'] == render_idx:
+                                pitch_md.set_content(ai_pitch)
+                        except Exception:
+                            pass
+
+                    async def warm_next_card(next_idx=idx + 1):
+                        if next_idx < len(queue):
+                            await get_card_data(queue[next_idx])
+
+                    ui.timer(0.05, hydrate_ai_pitch, once=True)
+                    ui.timer(0.05, warm_next_card, once=True)
+
+        await render_card()
+
+
+# ==========================================
+# 8. ระบบ Export Excel (ดาวน์โหลดไฟล์) - Premium UI
 # ==========================================
 @ui.page('/export')
 @standard_page_frame
@@ -1677,7 +2194,7 @@ async def export_page():
                 .props('flat').classes('text-gray-500 hover:text-white mt-4 font-bold tracking-widest z-10')
 
 # ==========================================
-# 8. หน้าจัดการแพ็กเกจ (PAYMENT & SUBSCRIPTION)
+# 9. หน้าจัดการแพ็กเกจ (PAYMENT & SUBSCRIPTION)
 # ==========================================
 @ui.page('/payment')
 @standard_page_frame
@@ -1687,12 +2204,16 @@ async def payment_page():
 
     state = {'is_annual': False}
 
-    with ui.column().classes('w-full max-w-7xl mx-auto p-4 md:p-8 gap-6 md:gap-8 pt-20 md:pt-24 items-center relative'):
+    with ui.column().classes('ax-page-shell w-full max-w-7xl mx-auto p-4 md:p-8 gap-6 md:gap-8 pt-20 md:pt-24 items-center relative ax-hero-glow'):
         
         with ui.column().classes('items-center text-center gap-2 mb-2'):
-            ui.label('UNLOCK APEX MASTERY').classes('text-[10px] text-[#D0FD3E] font-black tracking-[0.4em] uppercase border border-[#D0FD3E]/30 px-5 py-1.5 rounded-full bg-[#D0FD3E]/5')
-            ui.label('Choose Your Institutional Plan').classes('text-3xl md:text-5xl font-black text-white tracking-wide mt-2')
-            ui.label('ยกระดับการลงทุนของคุณด้วย AI และเครื่องมือวิเคราะห์ระดับโลก').classes('text-sm md:text-lg text-gray-400 mt-2 px-4')
+            ui.element('div').classes('w-52 h-52 absolute -top-10 rounded-full blur-[90px] bg-[#20D6A1]/15 pointer-events-none')
+            ui.label('UNLOCK APEX MASTERY').classes('text-[10px] text-[#D0FD3E] font-black tracking-[0.4em] uppercase border border-[#D0FD3E]/30 px-5 py-1.5 rounded-full bg-[#D0FD3E]/5 z-10')
+            ui.label('Choose Your Institutional Plan').classes('text-3xl md:text-5xl font-black text-white tracking-wide mt-2 z-10')
+            ui.label('ยกระดับการลงทุนด้วย AI Signals, Matchmaker และระบบ Alert อัจฉริยะ').classes('text-sm md:text-lg text-gray-300 mt-2 px-4 z-10')
+            with ui.row().classes('gap-2 mt-2 z-10'):
+                ui.label('FAST ACTIVATION').classes('text-[10px] px-3 py-1 rounded-full bg-[#20D6A1]/15 text-[#20D6A1] border border-[#20D6A1]/25 font-black tracking-widest')
+                ui.label('KBank QR READY').classes('text-[10px] px-3 py-1 rounded-full bg-[#39C8FF]/15 text-[#39C8FF] border border-[#39C8FF]/25 font-black tracking-widest')
 
         @ui.refreshable
         def pricing_section():
@@ -1706,52 +2227,49 @@ async def payment_page():
                     ui.button('รายเดือน', on_click=lambda: set_annual(False)).props('unelevated').classes(f'px-4 md:px-6 py-2 text-xs md:text-sm font-black rounded-full transition-all {btn_mo_class}')
                     ui.button('รายปี (Save 20%)', on_click=lambda: set_annual(True)).props('unelevated').classes(f'px-4 md:px-6 py-2 text-xs md:text-sm font-black rounded-full transition-all {btn_yr_class}')
 
-            with ui.row().classes('w-full gap-4 md:gap-6 mt-2 items-stretch justify-center flex-col lg:flex-row'):
-                
-                # ⚪ FREE Plan
-                with ui.column().classes('w-full lg:w-80 bg-[#0D1117]/80 backdrop-blur-xl border border-gray-800 p-6 md:p-8 rounded-[30px] items-center text-center shadow-lg hover:-translate-y-1 transition-all duration-300'):
-                    ui.label('BASIC FREE').classes('text-sm font-black text-gray-500 tracking-widest uppercase')
-                    ui.label('฿0').classes('text-4xl md:text-5xl font-black text-white mt-4 drop-shadow-md')
-                    ui.label('/ ตลอดชีพ').classes('text-xs text-gray-600 font-bold mb-8')
-                    
-                    with ui.column().classes('gap-4 text-sm text-gray-500 text-left w-full'):
-                        with ui.row().classes('items-center gap-3'):
-                            ui.icon('check_circle', size='sm').classes('text-gray-400')
-                            ui.label('Watchlist สูงสุด 3 ตัว')
-                        with ui.row().classes('items-center gap-3'):
-                            ui.icon('check_circle', size='sm').classes('text-gray-400')
-                            ui.label('ระบบคำนวณกำไรพื้นฐาน')
-                        with ui.row().classes('items-center gap-3 opacity-30'):
-                            ui.icon('cancel', size='sm')
-                            ui.label('AI Sentiment & กราฟขั้นสูง').classes('line-through')
+            with ui.grid(columns='grid-cols-1 lg:grid-cols-3').classes('w-full gap-4 md:gap-6 mt-2 items-stretch'):
+                # FREE
+                with ui.column().classes('w-full bg-[#0A1318]/85 border border-[#1c3744] p-6 md:p-8 rounded-[30px] shadow-xl justify-between ax-card-hover ax-equal-card'):
+                    with ui.column().classes('gap-3'):
+                        ui.label('BASIC 🌱').classes('text-xs font-black text-[#7aa5b8] tracking-[0.25em] uppercase')
+                        ui.label('ฟรี 🆓').classes('text-5xl font-black text-white')
+                        ui.label('เริ่มต้นติดตามตลาด ทดลองใช้ AI').classes('text-sm text-gray-400')
+                        ui.element('div').classes('w-full h-px bg-white/10 my-2')
+                        for text in ['สรุปสภาวะตลาดโลก', 'ข่าวด่วนการลงทุน', 'สร้าง Watchlist สูงสุด 3 ตัว', 'โควต้าวิเคราะห์กราฟ 10 ครั้ง/วัน']:
+                            with ui.row().classes('items-center gap-2'):
+                                ui.icon('check', size='sm').classes('text-[#9ad0c7]')
+                                ui.label(text).classes('text-sm text-gray-200')
+                    ui.button('เริ่มต้นใช้งานฟรี 🚀', on_click=lambda: ui.navigate.to('/')).classes('mt-6 w-full border border-white/20 text-white font-black rounded-xl py-3')
 
-                # 💎 VIP Plan
-                with ui.column().classes('w-full lg:w-80 bg-[#11141C]/80 backdrop-blur-xl border border-white/5 p-6 md:p-8 rounded-[30px] items-center text-center shadow-2xl hover:-translate-y-1 transition-all duration-300'):
-                    ui.label('VIP TIER').classes('text-sm font-black text-gray-300 tracking-widest uppercase')
-                    ui.label(f"฿{'1,990' if is_annual else '199'}").classes('text-4xl md:text-5xl font-black text-white mt-4 drop-shadow-md')
-                    ui.label('/ ปี' if is_annual else '/ เดือน').classes('text-xs text-gray-500 font-bold mb-8')
-                    
-                    with ui.column().classes('gap-4 text-sm text-gray-400 text-left w-full'):
-                        for text in ['Watchlist สูงสุด 10 ตัว', 'AI Sentiment วิเคราะห์ไม่อั้น', 'สแกนกราฟ Watchlist รวดเดียว']:
-                            with ui.row().classes('items-center gap-3'):
-                                ui.icon('check_circle', size='sm').classes('text-[#32D74B]')
-                                ui.label(text)
-                        with ui.row().classes('items-center gap-3 opacity-50'):
-                            ui.icon('cancel', size='sm')
-                            ui.label('Price Alert & Morning Brief').classes('line-through')
-                            
-                # 👑 PRO Plan
-                with ui.column().classes('w-full lg:w-96 bg-gradient-to-b from-[#1C2128] to-[#11141C] border-2 border-[#D0FD3E] p-6 md:p-8 rounded-[30px] items-center text-center shadow-[0_0_50px_rgba(208,253,62,0.15)] relative transform hover:-translate-y-2 transition-all duration-300 z-10'):
-                    ui.label('MOST POPULAR').classes('absolute -top-3 bg-gradient-to-r from-[#D0FD3E] to-[#32D74B] text-black text-[10px] font-black px-4 py-1.5 rounded-full shadow-lg tracking-widest')
-                    ui.label('PRO MASTER').classes('text-sm font-black text-[#D0FD3E] tracking-widest uppercase')
-                    ui.label(f"฿{'4,990' if is_annual else '499'}").classes('text-5xl md:text-6xl font-black text-white mt-4 drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]')
-                    ui.label('/ ปี (คุ้มค่าที่สุด)' if is_annual else '/ เดือน (คุ้มค่าที่สุด)').classes('text-xs text-[#D0FD3E] font-bold mb-8')
-                    
-                    with ui.column().classes('gap-4 text-sm text-white font-bold text-left w-full'):
-                        for text in ['Watchlist ไม่จำกัดจำนวน', 'Morning Briefing ส่งตรงทุกเช้า', 'แจ้งเตือนปันผล (XD) ล่วงหน้า', 'Price Alerts / Golden Cross', 'AI Rebalance Manager']:
-                            with ui.row().classes('items-center gap-3'):
-                                ui.icon('bolt', size='sm').classes('text-[#D0FD3E]')
-                                ui.label(text)
+                # VIP
+                with ui.column().classes('w-full bg-gradient-to-b from-[#13232D] to-[#0B1720] border border-[#56D3FF]/35 p-6 md:p-8 rounded-[30px] shadow-[0_0_30px_rgba(86,211,255,0.14)] relative justify-between ax-card-hover ax-equal-card'):
+                    ui.label('MOST POPULAR').classes('absolute -top-3 left-1/2 -translate-x-1/2 bg-[#1edc8b] text-black text-[10px] font-black px-4 py-1 rounded-full tracking-widest')
+                    with ui.column().classes('gap-3'):
+                        ui.label('ADVANCED ✨').classes('text-xs font-black text-[#6ceac2] tracking-[0.25em] uppercase')
+                        ui.label('VIP 💎').classes('text-5xl font-black text-white')
+                        ui.label(f"฿{'1,990' if is_annual else '299'} {'/ปี' if is_annual else '/เดือน'}").classes('text-4xl font-black text-white')
+                        ui.label('ปลดล็อก AI วิเคราะห์กราฟแบบละเอียด').classes('text-sm text-[#9acfbf]')
+                        ui.element('div').classes('w-full h-px bg-[#1edc8b]/25 my-2')
+                        for text in ['ฟีเจอร์ Basic ทั้งหมด', 'สแกนกราฟ Unlimited (RSI, MACD, Volume)', 'Watchlist สูงสุด 10 ตัว', 'AI คำนวณแนวรับ-แนวต้านอัตโนมัติ', 'แผนเทรดจาก AI พร้อมจุดเข้า/TP/SL']:
+                            with ui.row().classes('items-center gap-2'):
+                                ui.icon('bolt', size='sm').classes('text-[#1edc8b]')
+                                ui.label(text).classes('text-sm text-white')
+                    ui.button('อัปเกรด VIP 💚', on_click=lambda: ui.notify('เลือกแพ็กเกจ VIP แล้ว สแกน QR ด้านล่าง', type='info')).classes('mt-6 w-full bg-[#1edc8b] text-black font-black rounded-xl py-3')
+
+                # PRO
+                with ui.column().classes('w-full bg-gradient-to-b from-[#13242E] to-[#0C1822] border border-[#7EF7CF] p-6 md:p-8 rounded-[30px] shadow-[0_0_34px_rgba(126,247,207,0.18)] relative justify-between ax-card-hover ax-equal-card'):
+                    ui.label('BEST VALUE').classes('absolute -top-3 left-1/2 -translate-x-1/2 bg-[#20D6A1] text-black text-[10px] font-black px-4 py-1 rounded-full tracking-widest')
+                    with ui.column().classes('gap-3'):
+                        ui.label('ULTIMATE 👑').classes('text-xs font-black text-[#7df3ca] tracking-[0.25em] uppercase')
+                        ui.label('PRO 🔥').classes('text-5xl font-black text-white')
+                        ui.label(f"฿{'4,990' if is_annual else '499'} {'/ปี' if is_annual else '/เดือน'}").classes('text-4xl font-black text-white')
+                        ui.label('เครื่องมือระดับสถาบันสำหรับนักลงทุนจริงจัง').classes('text-sm text-[#a4d9c8]')
+                        ui.element('div').classes('w-full h-px bg-[#20D6A1]/25 my-2')
+                        for text in ['ฟีเจอร์ VIP ทั้งหมด', 'AI Stock Matchmaker', 'Morning Briefing สรุปตลาดทุกเช้า', 'Custom Price Alerts', 'Global News Alerts', 'Watchlist ไม่จำกัดจำนวน']:
+                            with ui.row().classes('items-center gap-2'):
+                                ui.icon('star', size='sm').classes('text-[#20D6A1]')
+                                ui.label(text).classes('text-sm text-white')
+                    ui.button('อัปเกรด PRO 🚀', on_click=lambda: ui.notify('เลือกแพ็กเกจ PRO แล้ว สแกน QR ด้านล่าง', type='positive')).classes('mt-6 w-full bg-[#20D6A1] text-black font-black rounded-xl py-3')
 
         def set_annual(val):
             state['is_annual'] = val
@@ -1760,7 +2278,7 @@ async def payment_page():
         pricing_section()
 
         # 💳 Payment Box
-        with ui.row().classes('w-full max-w-4xl bg-gradient-to-r from-[#161B22] to-[#1C2128] border border-white/10 rounded-[30px] p-6 md:p-8 mt-6 shadow-2xl items-center justify-between relative overflow-hidden flex-col md:flex-row gap-6 md:gap-0'):
+        with ui.row().classes('w-full max-w-4xl bg-gradient-to-r from-[#161B22] to-[#1C2128] border border-white/10 rounded-[30px] p-6 md:p-8 mt-6 shadow-2xl items-center justify-between relative overflow-hidden flex-col md:flex-row gap-6 md:gap-0 ax-neon-ring'):
             ui.element('div').classes('absolute top-0 right-0 w-64 h-64 bg-[#D0FD3E]/5 rounded-full blur-3xl pointer-events-none')
             
             with ui.column().classes('gap-1 z-10 text-center md:text-left'):
@@ -1770,7 +2288,7 @@ async def payment_page():
                 ui.label('นาย เกียรติศักดิ์ วุฒิจันทร์').classes('text-sm text-gray-400 font-bold uppercase tracking-wider')
             
             with ui.column().classes('items-center text-center w-full max-w-[300px] gap-3 bg-[#0D1117]/50 backdrop-blur-md p-6 rounded-2xl border border-white/5 z-10 shadow-inner'):
-                ui.icon('qr_code_scanner', size='4xl').classes('text-white')
+                ui.image(build_payment_qr_url()).classes('w-56 h-56 rounded-xl bg-white p-2')
                 ui.label('โอนเงินตามแพ็กเกจ แล้วส่งสลิปให้บอท AI ตรวจสอบและอัปเกรดอัตโนมัติ').classes('text-xs text-gray-400 leading-relaxed')
                 ui.button('ส่งสลิปใน TELEGRAM', icon='send', on_click=lambda: ui.navigate.to('https://t.me/Apexify_Trading_bot', new_tab=True)).classes('w-full bg-[#32D74B] text-black font-black py-3 rounded-xl mt-2 hover:scale-105 transition-transform shadow-[0_0_20px_rgba(50,215,75,0.3)]')
 
@@ -1815,7 +2333,7 @@ async def alerts_page():
                     cond = alert['condition']
                     is_active = alert['is_active'] == 1
                     
-                    curr_price = get_live_price(sym)
+                    curr_price = await run.io_bound(get_live_price, sym)
                     dist_pct = ((target - curr_price) / curr_price * 100) if curr_price > 0 else 0
                     
                     status_color = '#32D74B' if is_active else '#8B949E'

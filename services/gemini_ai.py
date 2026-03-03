@@ -49,6 +49,61 @@ def generate_apexify_report(tech_data: dict, role: str = 'free') -> str:
         logger.error(f"AI Report Error for {symbol}: {e}")
         return f"❌ เกิดข้อผิดพลาดในการวิเคราะห์ AI: {e}"
 
+def generate_copilot_reply(question: str, role: str = 'free') -> str:
+    """Generic web copilot chat for Apexify."""
+    if not ai_client:
+        return "AI service is not configured (missing GEMINI_API_KEY)."
+    safe_q = (question or '').strip()
+    if not safe_q:
+        return "Please enter a question."
+    prompt = f"""
+You are Apexify Copilot, a concise investment assistant.
+User role: {str(role).lower()}.
+Rules:
+- Reply in Thai first, and include short English support line when useful.
+- Do not promise returns.
+- Keep risk-first guidance and include a brief caution when making suggestions.
+- Keep answer practical and scannable.
+
+User question:
+{safe_q}
+"""
+    try:
+        response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        return (response.text or '').strip() or "No response from AI."
+    except Exception as e:
+        logger.error(f"Copilot AI Error: {e}")
+        return f"AI error: {e}"
+
+
+def generate_stock_matchmaker_pitch(ticker: str, price: float, trend_up: bool) -> str:
+    """Short AI teaser for stock swipe cards."""
+    if not ai_client:
+        direction = 'แนวโน้มกำลังขึ้น' if trend_up else 'แนวโน้มยังแกว่ง'
+        return f'{ticker}: {direction} โฟกัสแผนเข้า-ออกและความเสี่ยงก่อนตัดสินใจ'
+    prompt = f"""
+Write a short Thai-first stock pitch in 2 bullet points for ticker {ticker}.
+Price: {price:.2f}
+Trend flag: {"uptrend" if trend_up else "sideway/downtrend"}
+Rules:
+- concise, practical, no hype
+- include one risk warning
+"""
+    try:
+        response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        text = (response.text or '').strip()
+        return text or f'{ticker}: ใช้แผนความเสี่ยงก่อนเข้าลงทุน'
+    except Exception as e:
+        logger.error(f"Matchmaker AI Error for {ticker}: {e}")
+        return f'{ticker}: สัญญาณน่าสนใจ แต่ควรตั้งจุด Stop-loss ทุกครั้ง'
+
+
 def analyze_payment_slip(image_bytes) -> str:
     """ให้ AI อ่านและสกัดข้อมูลจากภาพสลิปโอนเงิน"""
     if not ai_client:

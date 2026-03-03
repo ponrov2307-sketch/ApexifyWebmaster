@@ -6,11 +6,39 @@ DOMAIN_MAP = {
     'AAPL': 'apple.com', 'MSFT': 'microsoft.com', 'GOOGL': 'google.com',
     'AMZN': 'amazon.com', 'NVDA': 'nvidia.com', 'META': 'meta.com',
     'TSLA': 'tesla.com', 'JNJ': 'jnj.com', 'V': 'visa.com', 'WMT': 'walmart.com',
-    'BTC-USD': 'bitcoin.org'
+    'AVGO': 'broadcom.com', 'AMD': 'amd.com', 'PLTR': 'palantir.com',
+    'JPM': 'jpmorganchase.com', 'COST': 'costco.com', 'NFLX': 'netflix.com',
+    'SPY': 'ssga.com', 'VOO': 'vanguard.com',
+    'BTC-USD': 'bitcoin.org', 'ETH-USD': 'ethereum.org'
 }
+LOGO_URL_CACHE = {}
 
 T_GREEN = '#32D74B' # สีเขียว Apple
 T_RED = '#FF453A'   # สีแดง Apple
+
+
+def get_logo_url_for_ticker(ticker: str) -> str:
+    clean_ticker = (ticker or '').replace('.BK', '').upper()
+    if clean_ticker in LOGO_URL_CACHE:
+        return LOGO_URL_CACHE[clean_ticker]
+    domain = DOMAIN_MAP.get(clean_ticker)
+    if domain:
+        # Clearbit may fail/hotlink-block; Google favicon endpoint is more reliable.
+        url = f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
+    else:
+        base_symbol = clean_ticker.split('-')[0] if '-' in clean_ticker else clean_ticker
+        if (ticker or '').upper().endswith('.BK'):
+            url = "https://www.google.com/s2/favicons?domain=set.or.th&sz=128"
+        else:
+            if len(base_symbol) <= 1:
+                url = f"https://ui-avatars.com/api/?name={clean_ticker or 'NA'}&background=111827&color=e5e7eb&bold=true"
+            else:
+                # deterministic fallback that always renders
+                url = f"https://ui-avatars.com/api/?name={base_symbol}&background=0f172a&color=e2e8f0&bold=true"
+    LOGO_URL_CACHE[clean_ticker] = url
+    return url
+
+
 def create_table_skeleton(row_count=3):
     """ฟังก์ชันสร้างกล่องกระพริบระหว่างรอโหลดข้อมูล"""
     with ui.column().classes('w-full mt-2 gap-3 md:gap-4'):
@@ -83,9 +111,7 @@ def create_portfolio_table(assets: list, on_edit, on_news, on_chart, ui_refs: di
                 
                 # 📱 1. ซ้ายสุด: โลโก้, ชื่อหุ้น, และป้ายข้อมูล
                 with ui.row().classes('items-center gap-4 shrink-0 min-w-[200px]'):
-                    clean_ticker = ticker.replace('.BK', '').upper()
-                    domain = DOMAIN_MAP.get(clean_ticker)
-                    logo_url = f"https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.{domain}&size=128" if domain else f"https://ui-avatars.com/api/?name={clean_ticker}&background=111&color=fff"
+                    logo_url = get_logo_url_for_ticker(ticker)
                     
                     with ui.element('div').classes('relative'):
                         ui.element('div').classes('absolute inset-0 bg-white/10 rounded-full blur-md group-hover:blur-lg transition-all')

@@ -8,11 +8,12 @@ TICKER_CSS = """
 <style>
     .ticker-wrap {
         width: 100%;
-        height: 36px;
-        background: rgba(11, 14, 20, 0.7); 
+        height: 44px;
+        background: linear-gradient(90deg, rgba(6,16,24,0.92), rgba(10,25,34,0.92), rgba(6,16,24,0.92));
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        border-bottom: 1px solid rgba(86, 211, 255, 0.16);
+        border-top: 1px solid rgba(126, 247, 207, 0.1);
         overflow: hidden;
         display: flex;
         align-items: center;
@@ -37,7 +38,7 @@ TICKER_CSS = """
     .ticker-item {
         display: inline-flex;
         align-items: center;
-        padding: 0 40px;
+        padding: 0 34px;
         font-family: 'Inter', sans-serif;
         font-size: 12px;
         font-weight: 800;
@@ -47,6 +48,20 @@ TICKER_CSS = """
     .t-prc { color: #FFFFFF; margin-right: 10px; }
     .t-up { color: #32D74B; text-shadow: 0 0 10px rgba(50,215,75,0.4); }
     .t-down { color: #FF453A; text-shadow: 0 0 10px rgba(255,69,58,0.4); }
+    .t-live-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-right: 18px;
+        padding: 4px 10px;
+        border-radius: 9999px;
+        border: 1px solid rgba(86,211,255,0.32);
+        background: rgba(86,211,255,0.12);
+        color: #b8ecff;
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+    }
 </style>
 """
 
@@ -88,7 +103,7 @@ def create_ticker():
                 
         if html_content:
             full_content = html_content + html_content 
-            new_html = f'<div class="ticker-wrap"><div class="ticker-move"><div style="color:#D0FD3E; font-weight:900; margin-right:20px; animation: pulse-green 2s infinite;">● LIVE</div>{full_content}</div></div>'
+            new_html = f'<div class="ticker-wrap"><div class="ticker-move"><div class="t-live-pill">● LIVE FEED</div>{full_content}</div></div>'
             ticker_container.content = new_html
 
     # สั่งงานให้เริ่มทำทันที และวนลูปทุก 60 วินาที
