@@ -2452,6 +2452,12 @@ async def macro_page(client):
                 else:
                     ui.label('✅ สภาวะเศรษฐกิจมหภาคอยู่ในเกณฑ์ปกติ ความเสี่ยงระบบ (Systemic Risk) ต่ำ สามารถถือรันเทรนด์ (Let Profit Run) หรือ DCA ได้ตามกลยุทธ์').classes('text-sm md:text-base text-white font-bold leading-relaxed')
 
+
+@ui.page('/healthz')
+def healthz():
+    ui.label('ok')
+
+
 # สิ้นสุดไฟล์
 # ==========================================
 def run_web() -> None:
