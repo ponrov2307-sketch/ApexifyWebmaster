@@ -767,78 +767,240 @@ async def main_page(client):
 # ==========================================
         # 🌟 ระบบ Popup สรุปพอร์ต (V4 - Executive Briefing UI)
         # ==========================================
-        def show_daily_summary_popup(net_worth, total_invested, total_profit, assets):
+        def show_daily_summary_popup(net_worth, total_invested, total_profit, assets, curr_sym='$', meta=None):
             today_str = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d')
             last_seen = app.storage.user.get('last_summary_date', '')
-            
-            # 🧨 สำหรับเทสต์ UI ให้ใช้ if True: (ถ้าเทสต์เสร็จแล้วแก้กลับเป็น if last_seen != today_str:)
+
+            assets = assets or []
+            meta = meta or {}
+
+            top_gainer = meta.get('top_gainer')
+            top_loser = meta.get('top_loser')
+
+            fg_label = meta.get('fg_label', 'NEUTRAL')
+            fg_color = meta.get('fg_color', '#8B949E')
+            fg_advice = meta.get('fg_advice', '')
+
+            # ใช้ curr_sym ที่ส่งเข้ามา เพื่อให้ popup ตรงกับ dashboard
+            curr_rate = 34.5 if curr_sym == '฿' else 1.0
+
+            # เช็คซ้ำอีกรอบแบบของเดิม (ปลอดภัย)
             if last_seen != today_str:
                 profit_pct = (total_profit / total_invested * 100) if total_invested > 0 else 0
                 is_profit = total_profit >= 0
                 p_color = '#32D74B' if is_profit else '#FF453A'
-                p_sign = '+' if is_profit else ''
-                
-                # เปลี่ยนพื้นหลัง Dialog ให้เบลอ
-                with ui.dialog().props('backdrop-filter="blur(10px)"') as dialog:
-                    with ui.card().classes('w-full max-w-[420px] bg-[#05070A]/95 backdrop-blur-3xl border border-white/10 p-0 rounded-[36px] overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.8)] flex flex-col'):
-                        
-                        # 🌟 1. Hero Section (สรุปยอดรวมด้านบนสุด)
-                        with ui.column().classes('w-full p-8 pb-10 bg-gradient-to-b from-[#12161E] to-transparent relative items-center text-center border-b border-white/5'):
-                            # แสง Glow ด้านหลังตัวเลข
-                            ui.element('div').classes('absolute top-10 left-1/2 -translate-x-1/2 w-48 h-48 rounded-full blur-[70px] pointer-events-none').style(f'background-color: {p_color}15;')
-                            
-                            ui.label('YOUR DAILY BRIEFING').classes('text-[9px] text-gray-500 font-black tracking-[0.3em] uppercase mb-4 z-10')
-                            
-                            # ตัวเลขพอร์ตใหญ่สะใจ
-                            ui.label(f"${net_worth:,.2f}").classes('text-5xl font-black text-white tracking-tight leading-none drop-shadow-lg z-10')
-                            
-                            # ป้าย PnL แบบแคปซูล
-                            with ui.row().classes('mt-5 px-5 py-2 rounded-full border items-center gap-2 z-10 shadow-inner').style(f'background-color: {p_color}10; border-color: {p_color}30;'):
-                                ui.icon('trending_up' if is_profit else 'trending_down', size='sm').style(f'color: {p_color};')
-                                ui.label(f"{p_sign}${abs(total_profit):,.2f} ({p_sign}{profit_pct:.2f}%)").classes('text-sm font-black tracking-wide').style(f'color: {p_color};')
+                p_sign = '+' if is_profit else '-'
 
-                        # 🌟 2. Asset List Section (รายการหุ้น)
+                # ปุ่มลัด: ปิด popup แล้วค่อยเปิด dialog ของเดิม
+                def open_add_from_popup():
+                    dialog.close()
+                    ui.timer(0.1, handle_add_asset, once=True)
+
+                def open_ai_from_popup():
+                    dialog.close()
+                    ui.timer(0.1, run_ai_rebalance, once=True)
+
+                with ui.dialog().props('backdrop-filter="blur(10px)"') as dialog:
+                    with ui.card().classes(
+                        'w-full max-w-[440px] bg-[#05070A]/95 backdrop-blur-3xl '
+                        'border border-white/10 p-0 rounded-[36px] overflow-hidden '
+                        'shadow-[0_30px_60px_rgba(0,0,0,0.8)] flex flex-col'
+                    ):
+
+                        # =========================
+                        # 1) HERO SUMMARY
+                        # =========================
+                        with ui.column().classes(
+                            'w-full p-8 pb-8 bg-gradient-to-b from-[#12161E] to-transparent '
+                            'relative items-center text-center border-b border-white/5'
+                        ):
+                            ui.element('div').classes(
+                                'absolute top-10 left-1/2 -translate-x-1/2 '
+                                'w-48 h-48 rounded-full blur-[70px] pointer-events-none'
+                            ).style(f'background-color: {p_color}15;')
+
+                            ui.label('LOGIN BRIEFING 2.0').classes(
+                                'text-[9px] text-gray-500 font-black tracking-[0.3em] '
+                                'uppercase mb-4 z-10'
+                            )
+
+                            ui.label(f"{curr_sym}{net_worth:,.2f}").classes(
+                                'text-5xl font-black text-white tracking-tight '
+                                'leading-none drop-shadow-lg z-10'
+                            )
+
+                            with ui.row().classes(
+                                'mt-5 px-5 py-2 rounded-full border items-center '
+                                'gap-2 z-10 shadow-inner'
+                            ).style(f'background-color: {p_color}10; border-color: {p_color}30;'):
+                                ui.icon(
+                                    'trending_up' if is_profit else 'trending_down',
+                                    size='sm'
+                                ).style(f'color: {p_color};')
+                                ui.label(
+                                    f"{p_sign}{curr_sym}{abs(total_profit):,.2f} "
+                                    f"({p_sign}{abs(profit_pct):.2f}%)"
+                                ).classes('text-sm font-black tracking-wide').style(f'color: {p_color};')
+
+                        # =========================
+                        # 2) MARKET SNAPSHOT
+                        # =========================
+                        with ui.column().classes('w-full px-6 pt-4 gap-3'):
+                            ui.label('MARKET SNAPSHOT').classes(
+                                'text-[10px] text-gray-500 font-bold tracking-widest uppercase'
+                            )
+
+                            with ui.row().classes('w-full gap-3 flex-col sm:flex-row'):
+                                # Top Gainer
+                                with ui.column().classes(
+                                    'flex-1 bg-[#32D74B]/10 border border-[#32D74B]/20 '
+                                    'rounded-2xl p-3'
+                                ):
+                                    ui.label('TOP GAINER').classes(
+                                        'text-[9px] text-[#32D74B] font-black tracking-widest'
+                                    )
+                                    if top_gainer:
+                                        ui.label(
+                                            f"{top_gainer.get('ticker', '-')} "
+                                            f"{top_gainer.get('profit_pct', 0):+.2f}%"
+                                        ).classes('text-sm font-black text-white')
+                                    else:
+                                        ui.label('ไม่มีตัวบวกเด่นวันนี้').classes(
+                                            'text-sm text-gray-400'
+                                        )
+
+                                # Top Loser
+                                with ui.column().classes(
+                                    'flex-1 bg-[#FF453A]/10 border border-[#FF453A]/20 '
+                                    'rounded-2xl p-3'
+                                ):
+                                    ui.label('TOP LOSER').classes(
+                                        'text-[9px] text-[#FF453A] font-black tracking-widest'
+                                    )
+                                    if top_loser:
+                                        ui.label(
+                                            f"{top_loser.get('ticker', '-')} "
+                                            f"{top_loser.get('profit_pct', 0):+.2f}%"
+                                        ).classes('text-sm font-black text-white')
+                                    else:
+                                        ui.label('ไม่มีตัวลบเด่นวันนี้').classes(
+                                            'text-sm text-gray-400'
+                                        )
+
+                            with ui.row().classes(
+                                'w-full justify-between items-center rounded-2xl '
+                                'px-4 py-3 border border-white/5 bg-white/5'
+                            ):
+                                ui.label(fg_label).classes(
+                                    'text-[11px] font-black tracking-widest'
+                                ).style(f'color: {fg_color};')
+                                ui.label(fg_advice).classes(
+                                    'text-[10px] text-gray-400 font-bold text-right'
+                                )
+
+                        # =========================
+                        # 3) ASSET LIST
+                        # =========================
                         with ui.column().classes('w-full p-6 pt-4 gap-4'):
                             with ui.row().classes('w-full justify-between items-end mb-1 px-1'):
-                                ui.label('ASSET PERFORMANCE').classes('text-[10px] text-gray-500 font-bold tracking-widest uppercase')
-                                ui.label(f'{len(assets)} Holdings').classes('text-[10px] text-gray-600 font-bold')
+                                ui.label('ASSET PERFORMANCE').classes(
+                                    'text-[10px] text-gray-500 font-bold tracking-widest uppercase'
+                                )
+                                ui.label(f'{len(assets)} Holdings').classes(
+                                    'text-[10px] text-gray-600 font-bold'
+                                )
 
-                            with ui.column().classes('w-full gap-3 overflow-y-auto custom-scrollbar max-h-[250px] pr-2'):
+                            with ui.column().classes(
+                                'w-full gap-3 overflow-y-auto custom-scrollbar '
+                                'max-h-[250px] pr-2'
+                            ):
                                 if not assets:
-                                    ui.label('ยังไม่มีสินทรัพย์ในพอร์ต').classes('text-gray-500 text-sm text-center w-full my-4')
+                                    ui.label('ยังไม่มีสินทรัพย์ในพอร์ต').classes(
+                                        'text-gray-500 text-sm text-center w-full my-4'
+                                    )
                                 else:
                                     for a in assets:
-                                        ticker = a['ticker']
-                                        shares = a['shares']
-                                        cost = a['avg_cost']
-                                        price = a['last_price']
-                                        val = shares * price
-                                        prof = val - (shares * cost)
-                                        p_pct = a['profit_pct']
-                                        
-                                        a_color = '#32D74B' if prof >= 0 else '#FF453A'
-                                        a_sign = '+' if prof >= 0 else ''
-                                        
-                                        # กล่องหุ้นแต่ละตัว (ดีไซน์คลีนๆ)
-                                        with ui.row().classes('w-full justify-between items-center p-3 rounded-2xl bg-white/5 hover:bg-white/10 transition-colors border border-white/5 cursor-default'):
-                                            with ui.row().classes('items-center gap-3'):
-                                                # โลโก้ตัวอักษรย่อ
-                                                with ui.element('div').classes('w-10 h-10 rounded-full bg-[#0B0E14] border border-white/10 flex items-center justify-center shadow-inner'):
-                                                    ui.label(ticker[0]).classes('text-gray-300 font-black text-lg')
-                                                
-                                                with ui.column().classes('gap-0'):
-                                                    ui.label(ticker).classes('font-black text-white text-base leading-tight')
-                                                    ui.label(f"{shares:,.4f} @ ${cost:,.2f}").classes('text-[10px] text-gray-500 font-bold mt-0.5')
-                                            
-                                            with ui.column().classes('items-end gap-0'):
-                                                ui.label(f"${val:,.2f}").classes('font-black text-white text-sm')
-                                                ui.label(f"{a_sign}{p_pct:.2f}%").classes('text-[11px] font-black tracking-wide').style(f'color: {a_color};')
+                                        ticker = a.get('ticker', 'N/A')
+                                        shares = float(a.get('shares', 0))
+                                        base_cost = float(a.get('avg_cost', 0))
+                                        base_price = float(a.get('last_price', 0))
 
-                            # 🌟 3. Action Button (ปุ่มเข้าเว็บ)
-                            ui.button('ENTER DASHBOARD', on_click=dialog.close).classes('w-full mt-4 bg-white text-black font-black rounded-2xl py-4 shadow-[0_0_20px_rgba(255,255,255,0.15)] hover:bg-gray-200 hover:scale-[1.02] transition-all tracking-[0.2em] text-xs')
-                
+                                        # แปลงค่าเงินให้ตรงกับ popup
+                                        cost = base_cost * curr_rate
+                                        price = base_price * curr_rate
+                                        val = shares * price
+                                        prof = (price - cost) * shares
+                                        p_pct = float(a.get('profit_pct', 0))
+
+                                        a_color = '#32D74B' if prof >= 0 else '#FF453A'
+                                        logo_text = ticker[0] if ticker else '?'
+
+                                        with ui.row().classes(
+                                            'w-full justify-between items-center p-3 rounded-2xl '
+                                            'bg-white/5 hover:bg-white/10 transition-colors '
+                                            'border border-white/5 cursor-default'
+                                        ):
+                                            with ui.row().classes('items-center gap-3'):
+                                                with ui.element('div').classes(
+                                                    'w-10 h-10 rounded-full bg-[#0B0E14] '
+                                                    'border border-white/10 flex items-center '
+                                                    'justify-center shadow-inner'
+                                                ):
+                                                    ui.label(logo_text).classes(
+                                                        'text-gray-300 font-black text-lg'
+                                                    )
+
+                                                with ui.column().classes('gap-0'):
+                                                    ui.label(ticker).classes(
+                                                        'font-black text-white text-base leading-tight'
+                                                    )
+                                                    ui.label(
+                                                        f"{shares:,.4f} @ {curr_sym}{cost:,.2f}"
+                                                    ).classes(
+                                                        'text-[10px] text-gray-500 font-bold mt-0.5'
+                                                    )
+
+                                            with ui.column().classes('items-end gap-0'):
+                                                ui.label(f"{curr_sym}{val:,.2f}").classes(
+                                                    'font-black text-white text-sm'
+                                                )
+                                                ui.label(f"{p_pct:+.2f}%").classes(
+                                                    'text-[11px] font-black tracking-wide'
+                                                ).style(f'color: {a_color};')
+
+                            # =========================
+                            # 4) QUICK ACTIONS
+                            # =========================
+                            with ui.column().classes('w-full mt-4 gap-2'):
+                                ui.button(
+                                    'ENTER DASHBOARD',
+                                    on_click=dialog.close
+                                ).classes(
+                                    'w-full bg-white text-black font-black rounded-2xl py-4 '
+                                    'shadow-[0_0_20px_rgba(255,255,255,0.15)] '
+                                    'hover:bg-gray-200 hover:scale-[1.02] transition-all '
+                                    'tracking-[0.2em] text-xs'
+                                )
+
+                                with ui.row().classes('w-full gap-2'):
+                                    ui.button(
+                                        '+ ADD HOLDING',
+                                        on_click=open_add_from_popup
+                                    ).classes(
+                                        'flex-1 bg-[#D0FD3E] text-black font-black rounded-2xl py-3 '
+                                        'hover:scale-[1.02] transition-all text-[11px]'
+                                    )
+
+                                    ui.button(
+                                        '🤖 AI REBALANCE',
+                                        on_click=open_ai_from_popup
+                                    ).classes(
+                                        'flex-1 bg-gradient-to-r from-purple-600 to-indigo-500 '
+                                        'text-white font-black rounded-2xl py-3 '
+                                        'hover:scale-[1.02] transition-all text-[11px]'
+                                    )
+
                 dialog.open()
-                # บันทึกว่าวันนี้ดูไปแล้ว (เอา # ออกเมื่อเทสต์เสร็จ)
                 app.storage.user['last_summary_date'] = today_str
 
         # 🌟 [แก้บั๊กที่ 2] ฟังก์ชันตัวกลางสำหรับรอให้ข้อมูลโหลด 100% ก่อนเด้ง Popup
@@ -849,7 +1011,14 @@ async def main_page(client):
             
             # เช็คว่ายังไม่เคยดูวันนี้ และพอร์ตต้องโหลดข้อมูลเสร็จแล้ว (เงิน > 0)
             if last_seen != today_str and nd['total_invested'] > 0:
-                show_daily_summary_popup(nd['net_worth'], nd['total_invested'], nd['total_profit'], nd['sorted_assets'])
+                                show_daily_summary_popup(
+                    nd['net_worth'],
+                    nd['total_invested'],
+                    nd['total_profit'],
+                    nd['sorted_assets'],
+                    curr_sym=nd.get('curr_sym', '$'),
+                    meta=nd,
+                )
 
         # หน่วงเวลา 1.5 วินาที ให้หน้าเว็บหลักโหลดโครงสร้างเสร็จก่อน ค่อยประมวลผล Popup
         ui.timer(1.5, trigger_popup, once=True)
