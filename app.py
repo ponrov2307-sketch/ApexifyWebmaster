@@ -876,8 +876,11 @@ async def main_page(client):
                     ui.label(f"CURRENCY: {'THB' if d['curr_sym'] == '฿' else 'USD'}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
                     ui.label(f"HOLDINGS: {len(d.get('sorted_assets', []))}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
                     ui.label(f"STATUS: {d.get('status_txt', '-')[:24]}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-[#20D6A1]/10 text-[#20D6A1] border border-[#20D6A1]/25')
+                    ui.label(f"EXPOSURE: {d.get('curr_sym', '$')}{d.get('total_invested', 0):,.0f}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
+                    auth_at = str(app.storage.user.get('auth_at', '')).replace('T', ' ')[:16] if app.storage.user.get('auth_at') else 'N/A'
+                    ui.label(f"LAST LOGIN: {auth_at}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
 
-            with ui.column().classes('w-full lg:w-[420px] justify-center bg-gradient-to-br from-[#161B22] to-[#0B0E14] p-4 md:p-5 rounded-[20px] border border-[#20D6A1]/20 shadow-lg relative overflow-hidden transition-all hover:border-[#39C8FF]/40 min-w-0 ax-neon-ring ax-card-hover'):
+            with ui.column().classes('flex-1 justify-center bg-gradient-to-br from-[#161B22] to-[#0B0E14] p-4 md:p-5 rounded-[20px] border border-[#20D6A1]/20 shadow-lg relative overflow-hidden transition-all hover:border-[#39C8FF]/40 min-w-0 ax-neon-ring ax-card-hover'):
                 ui.label('VIP COMMAND CENTER').classes('text-[10px] text-[#39C8FF] font-black tracking-widest uppercase mb-1 z-10')
                 membership_role = d.get('role', 'FREE')
                 days_left = d.get('days_left')
@@ -1164,8 +1167,29 @@ async def main_page(client):
 # ==========================================
         # 🌟 ระบบ Popup สรุปพอร์ต (V4 - Executive Briefing UI)
         # ==========================================
+        def _today_local_str() -> str:
+            return datetime.now().strftime('%Y-%m-%d')
+
+        def _popup_seen_today() -> bool:
+            today_str = _today_local_str()
+            user_seen = app.storage.user.get('last_summary_date', '')
+            browser_seen = ''
+            try:
+                browser_seen = app.storage.browser.get('last_summary_date', '')
+            except Exception:
+                browser_seen = ''
+            return user_seen == today_str or browser_seen == today_str
+
+        def _mark_popup_seen_today() -> None:
+            today_str = _today_local_str()
+            app.storage.user['last_summary_date'] = today_str
+            try:
+                app.storage.browser['last_summary_date'] = today_str
+            except Exception:
+                pass
+
         def show_daily_summary_popup(net_worth, total_invested, total_profit, assets, curr_sym='$', meta=None):
-            today_str = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d')
+            today_str = _today_local_str()
             last_seen = app.storage.user.get('last_summary_date', '')
 
             assets = assets or []
@@ -1402,19 +1426,17 @@ async def main_page(client):
                                     )
 
                 dialog.open()
-                app.storage.user['last_summary_date'] = today_str
+                _mark_popup_seen_today()
 
         # 🌟 [แก้บั๊กที่ 2] ฟังก์ชันตัวกลางสำหรับรอให้ข้อมูลโหลด 100% ก่อนเด้ง Popup
         async def trigger_popup():
             if not client.has_socket_connection:
                 return
             nd = await load_dashboard_data()
-            today_str = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d')
-            last_seen = app.storage.user.get('last_summary_date', '')
             
             # เช็คว่ายังไม่เคยดูวันนี้ และพอร์ตต้องโหลดข้อมูลเสร็จแล้ว (เงิน > 0)
-            if last_seen != today_str and nd['total_invested'] > 0:
-                                show_daily_summary_popup(
+            if (not _popup_seen_today()) and nd['total_invested'] > 0:
+                show_daily_summary_popup(
                     nd['net_worth'],
                     nd['total_invested'],
                     nd['total_profit'],
