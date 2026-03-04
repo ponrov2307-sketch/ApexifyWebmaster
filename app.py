@@ -602,7 +602,11 @@ async def handle_news(ticker):
         news_summary_text.set_text(news_summary)
 async def handle_chart(ticker):
     app.storage.client['modal_open'] = True
-    await show_candlestick_chart(ticker)
+    try:
+        await show_candlestick_chart(ticker)
+    except Exception as e:
+        app.storage.client['modal_open'] = False
+        ui.notify(f'Unable to open chart for {ticker}: {e}', type='negative')
 
 
 def normalize_series(series):
@@ -613,6 +617,16 @@ def normalize_series(series):
     if max_v <= min_v:
         return [50.0 for _ in values]
     return [((v - min_v) / (max_v - min_v)) * 100 for v in values]
+
+
+def ensure_sparkline_series(series, fallback_value=50.0):
+    normalized = normalize_series(series)
+    if not normalized:
+        return [fallback_value, fallback_value]
+    if len(normalized) == 1:
+        value = float(normalized[0])
+        return [value, value]
+    return normalized
 
 
 def parse_expiry_to_days_left(expiry_value):
@@ -960,7 +974,16 @@ async def main_page(client):
 
     async def load_dashboard_data():
         # ?? ย้ายการเรียก Storage มาไว้บนสุดเพื่อแก้บั๊ก AssertionError
-        current_group = app.storage.client.get('dashboard_group', 'ALL')
+        allowed_groups = {'ALL', 'DCA', 'TRADING', 'DIV'}
+
+        def normalize_group(group):
+            value = str(group or 'ALL').strip().upper()
+            return value if value in allowed_groups else 'ALL'
+
+        current_group_raw = app.storage.client.get('dashboard_group', 'ALL')
+        current_group = normalize_group(current_group_raw)
+        if current_group_raw != current_group:
+            app.storage.client['dashboard_group'] = current_group
         
         user_info = await run.io_bound(get_user_by_telegram, telegram_id) if telegram_id else {}
         
@@ -983,8 +1006,6 @@ async def main_page(client):
 
         raw_portfolio = await run.io_bound(get_portfolio, user_id) if user_id else []
         
-        raw_portfolio = await run.io_bound(get_portfolio, user_id) if user_id else []
-        
         assets = []
         total_invested, net_worth = 0, 0
         
@@ -992,8 +1013,9 @@ async def main_page(client):
         # ?? 1. ลูปดึงราคาและคำนวณหุ้น (อัปเดตเพิ่ม Sparkline)
         # ==========================================
         for item in raw_portfolio:
+            item_group = normalize_group(item.get('asset_group', 'ALL'))
             # กรองตามกลุ่มที่เลือก (ALL, DCA, DIV, TRADING)
-            if current_group != 'ALL' and item.get('asset_group', 'ALL') != current_group: 
+            if current_group != 'ALL' and item_group != current_group:
                 continue
                 
             ticker = item['ticker']
@@ -1002,11 +1024,12 @@ async def main_page(client):
             
             # ?? ดึงราคาแบบ Real-time และ กราฟ Sparkline
             last_price = await run.io_bound(get_live_price, ticker)
-            sparkline_data, is_up = await run.io_bound(get_sparkline_data, ticker)
-            
-            # ?? [เพิ่มโค้ดนี้] บังคับกราฟเส้นให้หยักสุดขีด (Normalize 0-100)
-            if sparkline_data and len(sparkline_data) > 0:
-                sparkline_data = normalize_series(sparkline_data)
+            raw_sparkline, _ = await run.io_bound(get_sparkline_data, ticker)
+            sparkline_data = ensure_sparkline_series(raw_sparkline)
+            if raw_sparkline and len(raw_sparkline) > 1:
+                is_up = bool(raw_sparkline[-1] >= raw_sparkline[0])
+            else:
+                is_up = bool(last_price >= avg_cost)
             current_value = shares * last_price
             invested = shares * avg_cost
             profit = current_value - invested
@@ -1023,7 +1046,7 @@ async def main_page(client):
                 'total_value': current_value,
                 'profit': profit,
                 'profit_pct': profit_pct,
-                'asset_group': item.get('asset_group', 'ALL'),
+                'asset_group': item_group,
                 'alert_price': item.get('alert_price', 0),
                 'sparkline': sparkline_data, # ?? ส่งกราฟไปให้ตารางวาด
                 'is_up': is_up               # ?? ส่งสีเขียว/แดงไปให้ตาราง
@@ -1108,7 +1131,8 @@ async def main_page(client):
     with ui.column().classes('ax-page-shell w-full max-w-7xl mx-auto p-2 sm:p-4 md:p-8 gap-4 md:gap-6 pt-[110px] md:pt-[120px]'):
 
         async def change_portfolio_group(e):
-            app.storage.client['dashboard_group'] = e.value
+            selected_group = str(e.value or 'ALL').strip().upper()
+            app.storage.client['dashboard_group'] = selected_group if selected_group in {'ALL', 'DCA', 'TRADING', 'DIV'} else 'ALL'
             await smart_update() # รันทันที ปลอดภัย 100%
 
         # ?? แถวบน: 2-column fixed (desktop) + compact stack (mobile)
@@ -1265,7 +1289,7 @@ async def main_page(client):
                 color_class = 'text-[#32D74B]' if d['is_profit_overall'] else 'text-[#FF453A]'
                 sign = "+" if d['is_profit_overall'] else "-"
                 pct = (abs(d['total_profit']) / d['total_invested'] * 100) if d['total_invested'] > 0 else 0
-                ui_refs['total_profit'] = ui.label(f'{"" if d["is_profit_overall"] else ""} {d["curr_sym"]}{abs(d["total_profit"]):,.2f} ({sign}{pct:.2f}%)').classes(f'tabular-nums text-base md:text-xl font-black mt-2 {color_class} drop-shadow-md')
+                ui_refs['total_profit'] = ui.label(f'{sign} {d["curr_sym"]}{abs(d["total_profit"]):,.2f} ({sign}{pct:.2f}%)').classes(f'tabular-nums text-base md:text-xl font-black mt-2 {color_class} drop-shadow-md')
 
         def render_trade_plan_panel(panel_assets, role, curr_sym, curr_rate):
             is_pro_plan = str(role).upper() in ['PRO', 'VIP', 'ADMIN']
@@ -1821,7 +1845,7 @@ async def main_page(client):
             ui_refs['net_worth'].classes(add='animate-pop')
             ui.timer(0.4, lambda: safe_remove_pop(ui_refs['net_worth']), once=True)
 
-        ui_refs['total_profit'].set_text(f'{"" if nd["is_profit_overall"] else ""} {nd["curr_sym"]}{abs(nd["total_profit"]):,.2f} ({sign}{pct:.2f}%)')
+        ui_refs['total_profit'].set_text(f'{sign} {nd["curr_sym"]}{abs(nd["total_profit"]):,.2f} ({sign}{pct:.2f}%)')
         ui_refs['total_profit'].classes(remove='text-[#32D74B] text-[#FF453A]', add=new_color)
         
         # 3. ?? อัปเดตหุ้นเด่น (เปลี่ยนเป็นทศนิยม 2 ตำแหน่ง + ใส่อนิเมชั่นเด้ง)
@@ -1886,11 +1910,11 @@ async def main_page(client):
                     ui_refs[f'prof_{t}'].style(f'color: {p_color}; background-color: {p_color}10;')
                     
                     # อัปเดต Sparkline
-                    if a.get('sparkline') and f'spark_{t}' in ui_refs:
-                        spark_data = a['sparkline']
+                    if f'spark_{t}' in ui_refs:
+                        spark_data = ensure_sparkline_series(a.get('sparkline'))
                         
                         # ?? บังคับสีให้ตรงกับทิศทางกราฟ 100% (ปลาย >= ต้น = สีเขียว)
-                        is_chart_up = spark_data[-1] >= spark_data[0] if len(spark_data) > 1 else True
+                        is_chart_up = bool(a.get('is_up', spark_data[-1] >= spark_data[0]))
                         s_color = '#32D74B' if is_chart_up else '#FF453A'
                         
                         ui_refs[f'spark_{t}'].options['series'][0]['data'] = spark_data
@@ -3078,7 +3102,6 @@ def healthz():
 def run_web() -> None:
     ui.run(
         title=APP_TITLE,
-        favicon="\U0001F4C8",
         dark=True,
         host=APP_HOST,
         port=APP_PORT,
