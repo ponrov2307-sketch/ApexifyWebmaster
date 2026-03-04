@@ -1474,13 +1474,13 @@ async def main_page(client):
                 if not is_pro:
                     teaser_issue = report['issues'][0] if report['issues'] else 'Risk diagnosis available in PRO'
                     teaser_action = report['actions'][0] if report['actions'] else 'Unlock PRO for full action plan'
-                with ui.column().classes('w-full gap-2 rounded-2xl bg-[#0B0E14]/70 border border-white/10 p-4'):
-                    ui.label(f'Issue: {teaser_issue}').classes('text-sm text-gray-300 font-bold')
-                    ui.label(f'Action: {teaser_action}').classes('text-xs text-gray-400')
-                    if FEATURE_PHASE_B_SIGNALS:
-                        ui.label('Phase B unlock: Entry/Exit signals + Position sizing + Confidence scoring').classes('text-[10px] text-[#39C8FF] font-bold')
-                        ui.button('UNLOCK FULL HEALTH DIAGNOSIS', on_click=lambda: go_payment_with_tracking('health_score_unlock')).classes('bg-[#FCD535] text-black font-black rounded-full px-5 py-2 text-xs w-full md:w-auto')
-                return
+                    with ui.column().classes('w-full gap-2 rounded-2xl bg-[#0B0E14]/70 border border-white/10 p-4'):
+                        ui.label(f'Issue: {teaser_issue}').classes('text-sm text-gray-300 font-bold')
+                        ui.label(f'Action: {teaser_action}').classes('text-xs text-gray-400')
+                        if FEATURE_PHASE_B_SIGNALS:
+                            ui.label('Phase B unlock: Entry/Exit signals + Position sizing + Confidence scoring').classes('text-[10px] text-[#39C8FF] font-bold')
+                            ui.button('UNLOCK FULL HEALTH DIAGNOSIS', on_click=lambda: go_payment_with_tracking('health_score_unlock')).classes('bg-[#FCD535] text-black font-black rounded-full px-5 py-2 text-xs w-full md:w-auto')
+                    return
 
                 with ui.row().classes('w-full gap-2 flex-wrap'):
                     for k, v in report['subscores'].items():
