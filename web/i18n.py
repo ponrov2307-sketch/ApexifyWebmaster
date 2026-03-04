@@ -100,13 +100,18 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "router.updated_age": "Updated {age}",
         "router.macro_hud": "Macro HUD",
         "router.main_site": "MAIN SITE",
+        "macro.subtitle": "Global macro warning dashboard with real-time risk scan.",
+        "macro.ai.high_yield": "Bond yields are elevated and equity risk is higher. Focus on value/dividend profiles and tighten risk controls.",
+        "matchmaker.swipe_hint": "Swipe left to skip • Swipe right to add to Watchlist/Alerts",
         "copilot.title": "APEXIFY COPILOT",
         "copilot.fab": "Apexify Copilot",
+        "copilot.subtitle": "Chat continuously with AI across multiple messages",
         "copilot.placeholder": 'Ask AI, e.g. "Analyze TSLA briefly"',
         "copilot.upgrade_body": "**Copilot is a PRO/VIP feature.**\n\nUpgrade to use live AI on web.",
         "copilot.upgrade_btn": "UPGRADE TO PRO",
         "copilot.thinking": "Copilot is thinking...",
         "copilot.send": "Send",
+        "copilot.back_dashboard": "Back Dashboard",
         "copilot.open_gemini": "Open Gemini Page",
         "auth.login_success": "Login success",
         "auth.token_disabled": "Token login is disabled.",
@@ -201,13 +206,18 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "router.updated_age": "อัปเดต {age}",
         "router.macro_hud": "Macro HUD",
         "router.main_site": "เว็บไซต์หลัก",
+        "macro.subtitle": "หน้าปัดเตือนเศรษฐกิจโลกพร้อมสแกนความเสี่ยงแบบเรียลไทม์",
+        "macro.ai.high_yield": "บอนด์ยีลด์อยู่ในระดับสูงและเพิ่มความเสี่ยงต่อหุ้น ควรเน้นหุ้นคุณค่า/ปันผล และคุมความเสี่ยงให้เข้มขึ้น",
+        "matchmaker.swipe_hint": "ปัดซ้ายเพื่อข้าม • ปัดขวาเพื่อเพิ่มเข้า Watchlist/Alerts",
         "copilot.title": "APEXIFY COPILOT",
         "copilot.fab": "Apexify Copilot",
+        "copilot.subtitle": "คุยกับ AI แบบต่อเนื่องหลายข้อความ",
         "copilot.placeholder": 'ถาม AI ได้เลย เช่น "วิเคราะห์ TSLA แบบสั้น"',
         "copilot.upgrade_body": "**Copilot เป็นฟีเจอร์สำหรับ PRO/VIP**\n\nอัปเกรดเพื่อใช้งาน AI บนเว็บแบบเต็ม",
         "copilot.upgrade_btn": "อัปเกรดเป็น PRO",
         "copilot.thinking": "Copilot กำลังคิด...",
         "copilot.send": "ส่ง",
+        "copilot.back_dashboard": "กลับหน้าแดชบอร์ด",
         "copilot.open_gemini": "เปิดหน้า Gemini",
         "auth.login_success": "เข้าสู่ระบบสำเร็จ",
         "auth.token_disabled": "ปิดการเข้าสู่ระบบด้วยโทเคน",
@@ -292,13 +302,13 @@ def tr(key: str, lang: str | None = "TH", **kwargs: Any) -> str:
 _CANDIDATE_ENCODINGS: tuple[str, ...] = ("cp874", "latin-1", "cp1252")
 _CANDIDATE_ERROR_MODES: tuple[str, ...] = ("strict", "ignore", "replace")
 _SUSPICIOUS_MOJIBAKE_TOKENS: tuple[str, ...] = (
-    "\u0E42\u20AC",  # โ€
-    "\u0E22\u20AC",  # ย€
-    "\u0E40\u0E19\u20AC\u0E40\u0E18",  # เน€เธ
+    "\u0E42\u20AC",  # mojibake token: Thai letter + Euro sign
+    "\u0E22\u20AC",  # mojibake token: Thai letter + Euro sign
+    "\u0E40\u0E19\u20AC\u0E40\u0E18",  # common broken Thai sequence
     "\u0E40\u0E19\u00C2",
     "\u0E40\u0E18\u00C2",
-    "Ã",
-    "Â",
+    "\u00C3",
+    "\u00C2",
     "\ufffd",
     "㹰",
     "ҹ",
@@ -320,7 +330,7 @@ def _should_attempt_repair(text: str) -> bool:
     if any(token in text for token in _SUSPICIOUS_MOJIBAKE_TOKENS):
         return True
 
-    # Common Thai mojibake signature: "เธ/เน" mixed with latin-1 supplement bytes.
+    # Common Thai mojibake signature mixed with latin-1 supplement bytes.
     if ("เธ" in text or "เน" in text) and any("\u0080" <= ch <= "\u00ff" for ch in text):
         return True
 
@@ -352,12 +362,12 @@ def _mojibake_score(text: str) -> int:
     score += text.count("\ufffd") * 10
 
     token_weights: tuple[tuple[str, int], ...] = (
-        ("\u0E40\u0E18", 4),  # เธ
-        ("\u0E42\u20AC", 6),  # โ€
-        ("\u0E22\u20AC", 6),  # ย€
-        ("\u0E40\u0E19\u20AC\u0E40\u0E18", 6),  # เน€เธ
-        ("Ã", 4),
-        ("Â", 3),
+        ("\u0E40\u0E18", 4),
+        ("\u0E42\u20AC", 6),
+        ("\u0E22\u20AC", 6),
+        ("\u0E40\u0E19\u20AC\u0E40\u0E18", 6),
+        ("\u00C3", 4),
+        ("\u00C2", 3),
         ("??", 2),
     )
     for token, weight in token_weights:
@@ -399,7 +409,7 @@ def _repair_mojibake(text: str) -> str:
     if not _should_attempt_repair(repaired):
         return _cleanup_candidate(repaired)
 
-    # First pass for Thai mojibake that commonly appears as "เธ...เน...".
+    # First pass for common broken Thai text signatures.
     if ("เธ" in repaired or "เน" in repaired) and any("\u0080" <= ch <= "\u00ff" for ch in repaired):
         baseline_score = _mojibake_score(repaired)
         for mode in ("strict", "ignore", "replace"):

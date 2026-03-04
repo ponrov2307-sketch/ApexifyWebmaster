@@ -2145,7 +2145,7 @@ async def main_page(client):
                 ui.timer(0.4, lambda: safe_remove_pop(ui_refs['lbl_loser']), once=True)
             ui_refs['box_loser'].set_visibility(True)
         else: ui_refs['box_loser'].set_visibility(False)
-        # ?? 4. เธขเธดเธเธเนเธญเธกเธนเธฅเธญเธฑเธเน€เธ”เธ•เน€เธเนเธฒเธเธฒเธฃเนเธ”เธซเธธเนเธ "เธ—เธตเธฅเธฐเนเธเนเธเธเน€เธเธตเธขเธเน" (เนเธกเนเธเธฃเธฐเธเธฃเธดเธ!)
+        # 4) Push updates into each stock card smoothly (avoid visual blinking).
         # เช็คว่าจำนวนหุ้นเพิ่ม/ลด หรือไม่ ถ้าใช่ ค่อยลบวาดใหม่
         current_tickers = [a['ticker'] for a in d['sorted_assets']]
         new_tickers = [a['ticker'] for a in nd['sorted_assets']]
@@ -2675,7 +2675,7 @@ async def heatmap_page():
         # ?? สร้างกล่องคลุมทั้งหมด (เพื่อสั่งเบลอทีเดียวถ้าเป็น Free)
         with ui.column().classes('w-full relative'):
             
-            # เนเธเธเน€เธเธทเนเธญเธซเธฒ (เธเธฃเธฒเธ Heatmap + เธ•เธฒเธฃเธฒเธ)
+            # Content area (heatmap chart + table)
             with ui.column().classes('w-full gap-8') as premium_content:
                 
                 # ?? 1. กราฟ Heatmap
@@ -2889,12 +2889,13 @@ async def matchmaker_page():
     user_info = await run.io_bound(get_user_by_telegram, tid) if tid else {}
     role = str(user_info.get('role', 'free')).lower()
     is_pro = role in ['pro', 'vip', 'admin']
+    lang = app.storage.user.get('lang', 'TH')
 
     with ui.column().classes('ax-page-shell w-full max-w-5xl mx-auto p-4 md:p-8 gap-5 pt-[110px] md:pt-[120px]'):
         with ui.row().classes('w-full items-end justify-between flex-col md:flex-row gap-3'):
             with ui.column().classes('gap-1'):
                 ui.label('AI STOCK MATCHMAKER').classes('text-2xl md:text-4xl font-black text-white tracking-widest uppercase')
-                ui.label('ปัดซ้ายเพื่อข้าม � ปัดขวาเพื่อเพิ่มเข้า Watchlist/Alerts').classes('text-xs md:text-sm text-gray-400')
+                ui.label(tr('matchmaker.swipe_hint', lang)).classes('text-xs md:text-sm text-gray-400')
             if not is_pro:
                 ui.button('UPGRADE TO PRO', on_click=lambda: ui.navigate.to('/payment')).classes('bg-[#FCD535] text-black font-black rounded-full px-6 py-2 text-xs')
 
@@ -3243,6 +3244,7 @@ async def alerts_page():
 async def macro_page(client):
     create_ticker() 
     await client.connected()
+    lang = app.storage.user.get('lang', 'TH')
 
     with ui.column().classes('w-full max-w-7xl mx-auto p-4 md:p-8 gap-6 md:gap-8 pt-[110px] md:pt-[120px] items-center relative'):
         
@@ -3250,7 +3252,7 @@ async def macro_page(client):
         with ui.column().classes('items-center text-center gap-2 mb-4'):
             ui.label('INSTITUTIONAL RADAR').classes('text-[10px] text-[#FF453A] font-black tracking-[0.4em] uppercase border border-[#FF453A]/30 px-5 py-1.5 rounded-full bg-[#FF453A]/10')
             ui.label('Macro-Economic HUD').classes('text-3xl md:text-5xl font-black text-white tracking-wide mt-2')
-            ui.label('หน้าปัดเตือนภัยเศรษฐกิจโลก สแกนความเสี่ยงระดับมหภาคแบบ Real-time').classes('text-sm md:text-lg text-gray-400 mt-2 px-4 text-center')
+            ui.label(tr('macro.subtitle', lang)).classes('text-sm md:text-lg text-gray-400 mt-2 px-4 text-center')
 
         # ?? ดึงข้อมูล 3 อินดิเคเตอร์หลักระดับโลก (เปลี่ยน CL=F เป็น USO ป้องกัน Error)
         try:
@@ -3311,7 +3313,7 @@ async def macro_page(client):
                 if vix > 25:
                     ui.label('ตลาดมีความผันผวนและตื่นตระหนกสูงมาก แนะนำให้ "ลดพอร์ต" หรือถือเงินสด (Cash) เพิ่มขึ้นเพื่อป้องกันความเสี่ยง หลีกเลี่ยงหุ้นเติบโต (Growth Stocks)').classes('text-sm md:text-base text-white font-bold leading-relaxed')
                 elif tnx > 4.5:
-                    ui.label('เธ”เธญเธเน€เธเธตเนเธขเนเธฅเธฐเธเธฅเธ•เธญเธเนเธ—เธเธเธฑเธเธเธเธฑเธ•เธฃเธญเธขเธนเนเนเธเธฃเธฐเธ”เธฑเธเธชเธนเธ เธเธ”เธ”เธฑเธเธ•เธฅเธฒเธ”เธซเธธเนเธ เนเธเธฐเธเธณเนเธซเนเน€เธเนเธเธฅเธเธ—เธธเธเนเธเธซเธธเนเธเธเธธเธ“เธเนเธฒ (Value Stocks) เธซเธฃเธทเธญเธซเธธเนเธเธเธฑเธเธเธฅเธชเธนเธ').classes('text-sm md:text-base text-white font-bold leading-relaxed')
+                    ui.label(tr('macro.ai.high_yield', lang)).classes('text-sm md:text-base text-white font-bold leading-relaxed')
                 else:
                     ui.label('สภาวะเศรษฐกิจมหภาคอยู่ในเกณฑ์ปกติ ความเสี่ยงระบบ (Systemic Risk) ต่ำ สามารถถือรันเทรนด์ (Let Profit Run) หรือ DCA ได้ตามกลยุทธ์').classes('text-sm md:text-base text-white font-bold leading-relaxed')
 
@@ -3323,14 +3325,15 @@ async def gemini_page(client):
     tid = app.storage.user.get('telegram_id')
     user_info = get_user_by_telegram(tid) if tid else {}
     role = str(user_info.get('role', 'free')).lower()
+    lang = app.storage.user.get('lang', 'TH')
 
     with ui.column().classes('w-full max-w-4xl mx-auto p-4 md:p-8 gap-4 pt-[110px] md:pt-[120px]'):
         with ui.card().classes('w-full bg-[#12161E]/70 border border-white/10 rounded-[24px] p-5 md:p-6'):
             ui.label('GEMINI COPILOT').classes('text-2xl md:text-3xl font-black text-white tracking-widest')
-            ui.label('เธเธธเธขเธเธฑเธ AI เนเธเธเธ•เนเธญเน€เธเธทเนเธญเธเธซเธฅเธฒเธขเธเนเธญเธเธงเธฒเธก').classes('text-sm text-gray-400')
+            ui.label(tr('copilot.subtitle', lang)).classes('text-sm text-gray-400')
 
         history = ui.column().classes('w-full min-h-[380px] max-h-[60vh] overflow-y-auto gap-3 bg-[#0B1320]/80 border border-[#39C8FF]/20 rounded-[20px] p-4')
-        prompt_input = ui.textarea(placeholder='พิมพ์คำถามของคุณ...').props('outlined dark autogrow').classes('w-full')
+        prompt_input = ui.textarea(placeholder=tr('copilot.placeholder', lang)).props('outlined dark autogrow').classes('w-full')
 
         state = {'sending': False}
 
@@ -3349,7 +3352,7 @@ async def gemini_page(client):
                 typing = ui.row().classes('items-center gap-2 text-xs text-gray-400')
                 with typing:
                     ui.spinner(size='sm', color='#39C8FF')
-                    ui.label('Gemini is thinking...')
+                    ui.label(tr('copilot.thinking', lang))
 
             try:
                 from services.gemini_ai import generate_copilot_reply
@@ -3372,8 +3375,8 @@ async def gemini_page(client):
                 state['sending'] = False
 
         with ui.row().classes('w-full gap-2'):
-            ui.button('Send', on_click=send_prompt, icon='send').classes('bg-[#20D6A1] text-black font-black rounded-xl px-5')
-            ui.button('Back Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat').classes('text-gray-300')
+            ui.button(tr('copilot.send', lang), on_click=send_prompt, icon='send').classes('bg-[#20D6A1] text-black font-black rounded-xl px-5')
+            ui.button(tr('copilot.back_dashboard', lang), on_click=lambda: ui.navigate.to('/')).props('flat').classes('text-gray-300')
 
 
 @ui.page('/healthz')
