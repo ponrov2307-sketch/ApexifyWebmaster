@@ -1,5 +1,12 @@
 import telebot
-from core.config import TELEGRAM_TOKEN
+from urllib.parse import urlencode
+
+from core.config import (
+    AUTH_MODE,
+    AUTH_SHARED_PASSCODE,
+    DASHBOARD_PUBLIC_URL,
+    TELEGRAM_TOKEN,
+)
 from core.database import db
 from services.pnl_generator import generate_pnl_card
 from services.yahoo_finance import get_live_price
@@ -7,6 +14,39 @@ from core.models import get_portfolio
 import io
 # เริ่มต้นตัวบอท
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
+
+def _resolve_dashboard_password(telegram_id: int) -> str:
+    mode = str(AUTH_MODE or "").strip().lower()
+    if mode == "shared_passcode":
+        return str(AUTH_SHARED_PASSCODE or "").strip()
+    if mode == "legacy_pin":
+        return str(telegram_id)[-4:]
+    return ""
+
+
+def _build_dashboard_link(telegram_id: int) -> str:
+    base = str(DASHBOARD_PUBLIC_URL or "").strip().rstrip("/")
+    if not base:
+        return ""
+
+    query = {"telegram_id": str(telegram_id)}
+    password = _resolve_dashboard_password(telegram_id)
+    if password:
+        query["password"] = password
+
+    return f"{base}/login-token?{urlencode(query)}"
+
+
+def _dashboard_keyboard(telegram_id: int):
+    dashboard_link = _build_dashboard_link(telegram_id)
+    if not dashboard_link:
+        return None
+
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton("OPEN DASHBOARD", url=dashboard_link))
+    return markup
+
 
 def register_handlers():
     
@@ -47,10 +87,36 @@ def register_handlers():
                 welcome_text = f"✅ ยินดีต้อนรับกลับมาครับคุณ <b>{username}</b>! พิมพ์ /add เพื่อเพิ่มหุ้นได้เลย"
                 
             # ใช้โหมด HTML ปลอดภัยกับชื่อแปลกๆ
-            bot.reply_to(message, welcome_text, parse_mode='HTML')
+            dashboard_markup = _dashboard_keyboard(telegram_id)
+            if dashboard_markup:
+                bot.reply_to(message, welcome_text, parse_mode='HTML', reply_markup=dashboard_markup)
+            else:
+                bot.reply_to(
+                    message,
+                    f"{welcome_text}\n\n/dashboard (DASHBOARD_PUBLIC_URL is not configured)",
+                    parse_mode='HTML',
+                )
             
         except Exception as e:
             bot.reply_to(message, f"❌ ระบบฐานข้อมูลมีปัญหา: {e}")
+
+    @bot.message_handler(commands=['dashboard'])
+    def open_dashboard(message):
+        telegram_id = message.from_user.id
+        dashboard_markup = _dashboard_keyboard(telegram_id)
+
+        if not dashboard_markup:
+            bot.reply_to(
+                message,
+                "❌ Dashboard link is not ready yet. Please set DASHBOARD_PUBLIC_URL in environment.",
+            )
+            return
+
+        bot.reply_to(
+            message,
+            "🌐 Open dashboard in browser:\n- Tap button below\n- If Telegram opens in-app, choose 'Open in Browser'",
+            reply_markup=dashboard_markup,
+        )
 
     @bot.message_handler(commands=['add'])
     def handle_add_stock(message):

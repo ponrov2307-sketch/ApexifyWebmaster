@@ -41,6 +41,15 @@ APP_RELOAD = _to_bool("APP_RELOAD", False)
 APP_TITLE = os.getenv("APP_TITLE", "Apex Wealth Master")
 NICEGUI_STORAGE_SECRET = os.getenv("NICEGUI_STORAGE_SECRET", "")
 
+_dashboard_public_url = os.getenv("DASHBOARD_PUBLIC_URL", "").strip()
+if not _dashboard_public_url:
+    _dashboard_public_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+if not _dashboard_public_url:
+    railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+    if railway_domain:
+        _dashboard_public_url = f"https://{railway_domain.strip('/')}"
+DASHBOARD_PUBLIC_URL = _dashboard_public_url.rstrip("/")
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 ADMIN_ID = os.getenv("ADMIN_ID", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
