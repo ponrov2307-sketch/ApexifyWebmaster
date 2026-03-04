@@ -3,7 +3,8 @@ param(
         "app.py",
         "web\router.py",
         "web\i18n.py",
-        "web\components\*.py"
+        "web\components\*.py",
+        "services\*.py"
     )
 )
 

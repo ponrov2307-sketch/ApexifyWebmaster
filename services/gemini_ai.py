@@ -27,7 +27,7 @@ def _looks_unreadable(text: str) -> bool:
     if not text:
         return True
 
-    bad_tokens = ("เน€เธ", "เธขโฌ", "โ€", "ย€", "Ã", "Â", "\ufffd")
+    bad_tokens = ("\u0E40\u0E19\u20AC\u0E40\u0E18", "\u0E42\u20AC", "\u0E22\u20AC", "Ã", "Â", "\ufffd")
     bad_score = sum(text.count(token) for token in bad_tokens)
     if bad_score >= 2:
         return True
@@ -50,12 +50,16 @@ def _normalize_ai_text(text: str, fallback: str) -> str:
         return fallback
 
     cleaned = raw
-    try:
-        from web.i18n import translate_text  # lazy import to avoid hard coupling
+    should_attempt_repair = _looks_unreadable(raw) or any(
+        token in raw for token in ("\u0E40\u0E19\u20AC\u0E40\u0E18", "\u0E42\u20AC", "\u0E22\u20AC", "Ã", "Â", "\ufffd")
+    )
+    if should_attempt_repair:
+        try:
+            from web.i18n import translate_text  # lazy import to avoid hard coupling
 
-        cleaned = translate_text(raw, "TH")
-    except Exception:
-        cleaned = raw
+            cleaned = translate_text(raw, "TH")
+        except Exception:
+            cleaned = raw
 
     cleaned = cleaned.strip()
     if _looks_unreadable(cleaned):
