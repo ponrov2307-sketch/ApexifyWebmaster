@@ -682,6 +682,106 @@ def build_trade_plan(asset: dict) -> dict:
     }
 
 
+def compute_portfolio_health(assets: list) -> dict:
+    if not assets:
+        return {
+            'score': 0,
+            'subscores': {
+                'Concentration': 0,
+                'Drawdown': 0,
+                'Volatility': 0,
+                'Correlation': 0,
+            },
+            'issues': ['No holdings available.'],
+            'actions': ['Add holdings to generate a health diagnosis.'],
+            'what_if_score': 0,
+        }
+
+    values = [max(float(a.get('shares', 0)) * float(a.get('last_price', 0)), 0.0) for a in assets]
+    total_value = sum(values)
+    if total_value <= 0:
+        return {
+            'score': 0,
+            'subscores': {
+                'Concentration': 0,
+                'Drawdown': 0,
+                'Volatility': 0,
+                'Correlation': 0,
+            },
+            'issues': ['Portfolio value is zero.'],
+            'actions': ['Update prices/holdings before diagnosis.'],
+            'what_if_score': 0,
+        }
+
+    weights = [v / total_value for v in values]
+    max_weight = max(weights)
+    top3_weight = sum(sorted(weights, reverse=True)[:3])
+
+    pnl_pcts = [float(a.get('profit_pct', 0) or 0) for a in assets]
+    neg_pcts = [p for p in pnl_pcts if p < 0]
+    loss_exposure = sum(weights[i] for i, p in enumerate(pnl_pcts) if p < 0)
+    avg_loss_mag = abs(sum(neg_pcts) / len(neg_pcts)) if neg_pcts else 0.0
+
+    weighted_abs_pnl = sum(abs(pnl_pcts[i]) * weights[i] for i in range(len(assets)))
+
+    concentration_penalty = min(max((max_weight - 0.35) * 100 * 0.9, 0.0), 35.0)
+    drawdown_penalty = min((loss_exposure * 100 * 0.35) + (avg_loss_mag * 0.5), 25.0)
+    volatility_penalty = min(weighted_abs_pnl * 0.75, 20.0)
+    correlation_penalty = min(max((top3_weight - 0.65) * 100 * 0.6, 0.0), 20.0)
+
+    total_penalty = concentration_penalty + drawdown_penalty + volatility_penalty + correlation_penalty
+    score = max(5, round(100 - total_penalty))
+
+    def subscore(penalty, cap):
+        return max(0, min(100, round(100 - (penalty / cap) * 100)))
+
+    subscores = {
+        'Concentration': subscore(concentration_penalty, 35),
+        'Drawdown': subscore(drawdown_penalty, 25),
+        'Volatility': subscore(volatility_penalty, 20),
+        'Correlation': subscore(correlation_penalty, 20),
+    }
+
+    issues = []
+    actions = []
+    if max_weight > 0.35:
+        issues.append(f'Concentration risk: top position is {max_weight*100:.1f}% of portfolio.')
+        actions.append('Trim top position to below 30-35% and spread into 2-3 uncorrelated names.')
+    if loss_exposure > 0.45:
+        issues.append(f'Drawdown pressure: {loss_exposure*100:.1f}% of portfolio is in losing positions.')
+        actions.append('Set stop-loss rules and scale out of weak trends.')
+    if weighted_abs_pnl > 12:
+        issues.append('Volatility elevated: portfolio swings are currently high.')
+        actions.append('Reduce leverage/high-beta exposure and rebalance into lower-volatility assets.')
+    if top3_weight > 0.65:
+        issues.append(f'Correlation proxy risk: top 3 holdings = {top3_weight*100:.1f}%.')
+        actions.append('Diversify themes/sectors to reduce same-direction shocks.')
+
+    if not issues:
+        issues = ['Portfolio structure is balanced with manageable risk.']
+        actions = ['Keep allocation discipline and review risk weekly.']
+
+    # Phase B starter: simple "what-if" projected improvement if top actions are applied.
+    potential_gain = 0
+    if max_weight > 0.35:
+        potential_gain += 8
+    if loss_exposure > 0.45:
+        potential_gain += 7
+    if weighted_abs_pnl > 12:
+        potential_gain += 5
+    if top3_weight > 0.65:
+        potential_gain += 6
+    what_if_score = min(100, score + potential_gain)
+
+    return {
+        'score': score,
+        'subscores': subscores,
+        'issues': issues[:3],
+        'actions': actions[:3],
+        'what_if_score': what_if_score,
+    }
+
+
 # ==========================================
 # 1. หน้าต่างเข้าสู่ระบบ (LOGIN PAGE)
 # ==========================================
