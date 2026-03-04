@@ -1753,6 +1753,21 @@ async def analytics_page(client):
                                 with ui.column().classes('gap-0'):
                                     ui.label(f"{item.get('rank', 0)}. {item.get('sector', 'N/A')}").classes('font-black text-white tracking-wide text-base md:text-lg')
                                     ui.label(item.get('symbol', '')).classes('text-[10px] text-gray-400 font-bold')
+                                    spark = item.get('sparkline', [])
+                                    if spark:
+                                        ui.echart({
+                                            'xAxis': {'type': 'category', 'show': False},
+                                            'yAxis': {'type': 'value', 'show': False},
+                                            'grid': {'left': 0, 'right': 0, 'top': 6, 'bottom': 6},
+                                            'series': [{
+                                                'type': 'line',
+                                                'data': spark,
+                                                'smooth': True,
+                                                'showSymbol': False,
+                                                'lineStyle': {'width': 2, 'color': '#32D74B' if flow >= 0 else '#FF453A'},
+                                                'areaStyle': {'opacity': 0.12, 'color': '#32D74B' if flow >= 0 else '#FF453A'},
+                                            }]
+                                        }).classes('w-28 h-12 mt-1')
                                 ui.label(f"{flow:+.2f}%").classes('font-black text-sm px-3 py-1 rounded-md').style(f"background:{'#32D74B22' if flow >= 0 else '#FF453A22'}; color:{'#32D74B' if flow >= 0 else '#FF453A'};")
                     else:
                         for a in assets_data:
@@ -1858,10 +1873,16 @@ async def dividend_page():
 
         async def run_simulation(e=None):
             mode = mode_tabs.value
+            is_quick = mode == 'Quick DRIP'
+            monthly_input.set_visibility(is_quick)
+            div_yield_input.set_visibility(is_quick)
+            growth_input.set_visibility(is_quick)
+            tax_input.set_visibility(is_quick)
+            ticker_input.set_visibility(not is_quick)
             initial = float(initial_input.value or 0)
             years = int(years_input.value or 10)
 
-            if mode == 'Quick DRIP':
+            if is_quick:
                 result = await run.io_bound(
                     get_drip_projection,
                     initial,
