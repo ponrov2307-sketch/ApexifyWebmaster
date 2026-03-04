@@ -1865,7 +1865,7 @@ async def main_page(client):
                                     )
 
                                     ui.button(
-                                        '?? AI REBALANCE',
+                                        'AI REBALANCE',
                                         on_click=open_ai_from_popup
                                     ).classes(
                                         'flex-1 bg-gradient-to-r from-purple-600 to-indigo-500 '

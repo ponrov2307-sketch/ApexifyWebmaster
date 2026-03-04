@@ -70,7 +70,7 @@ def create_table_skeleton(row_count=3):
 # (เนเธเนเธ”เธเนเธงเธเธเธเธเธญเธ table.py เธเธฅเนเธญเธขเนเธงเนเน€เธซเธกเธทเธญเธเน€เธ”เธดเธกเธเธฃเธฑเธ เธ•เธฑเนเธเนเธ•เน import เธเธเธ–เธถเธ create_table_skeleton)
 
 # ๐ เธเธฑเธเธเนเธเธฑเธเธงเธฒเธ”เธ•เธฒเธฃเธฒเธเนเธเธเนเธซเธกเน เธ—เธตเนเธฃเธญเธเธฃเธฑเธเธเธฒเธฃเธญเธฑเธเน€เธ”เธ•เนเธเธ Direct Injection
-def create_portfolio_table(assets: list, on_edit, on_news, on_chart, ui_refs: dict = None):
+def create_portfolio_table(assets: list, on_edit, on_news, on_chart, ui_refs: dict = None, empty_state: dict = None):
     # ui_refs เธเธทเธญเธ”เธดเธเธเธฑเธเธเธฒเธฃเธตเน€เธเธฅเนเธฒเธ—เธตเนเธฃเธฑเธเธกเธฒเธเธฒเธ app.py เน€เธญเธฒเนเธงเนเน€เธเนเธเธ•เธณเนเธซเธเนเธเธ•เธฑเธงเน€เธฅเธเธเธเธเธญ
     if ui_refs is None: ui_refs = {} 
     
@@ -85,10 +85,16 @@ def create_portfolio_table(assets: list, on_edit, on_news, on_chart, ui_refs: di
 
     with ui.column().classes('w-full mt-2 gap-3 md:gap-4'):
         if not assets:
+            empty_state = empty_state or {}
+            empty_title = str(empty_state.get('title') or 'No assets found.')
+            empty_subtitle = str(empty_state.get('subtitle') or 'Click + ADD HOLDING to start your journey.')
+            empty_cta = str(empty_state.get('cta') or '')
             with ui.column().classes('w-full items-center justify-center p-12 bg-[#12161E]/50 backdrop-blur-md rounded-[24px] border border-white/5 border-dashed'):
                 ui.icon('inventory_2', size='4xl').classes('text-gray-600 mb-4')
-                ui.label('No assets found.').classes('text-lg text-gray-400 font-bold')
-                ui.label('Click + ADD HOLDING to start your journey.').classes('text-sm text-gray-500')
+                ui.label(empty_title).classes('text-lg text-gray-400 font-bold text-center')
+                ui.label(empty_subtitle).classes('text-sm text-gray-500 text-center')
+                if empty_cta:
+                    ui.label(empty_cta).classes('text-xs text-[#D0FD3E] font-bold text-center mt-2')
             return
 
         for asset in assets:
