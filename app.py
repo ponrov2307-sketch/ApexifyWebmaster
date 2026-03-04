@@ -656,19 +656,63 @@ def build_trade_plan(asset: dict) -> dict:
     current_price = float(asset.get('last_price', 0) or 0)
     avg_cost = float(asset.get('avg_cost', 0) or 0)
     profit_pct = float(asset.get('profit_pct', 0) or 0)
+    sparkline = asset.get('sparkline') or []
+    trend_up = bool(sparkline and len(sparkline) > 1 and sparkline[-1] >= sparkline[0])
 
     if profit_pct >= 15:
         suggested_action = 'TAKE PROFIT'
+        signal = 'SELL-TRIM'
         reason = 'กำไรเริ่มสูง ควรทยอยล็อกกำไร / Profit is extended; scale out gradually.'
     elif profit_pct <= -8:
         suggested_action = 'CUT LOSS'
+        signal = 'SELL-REDUCE'
         reason = 'ขาดทุนเกิน threshold ควรควบคุมความเสี่ยง / Loss exceeded threshold; control downside risk.'
     elif profit_pct < 5:
         suggested_action = 'WATCH'
+        signal = 'WAIT'
         reason = 'ยังไม่ชัดเจน รอดูทิศทาง / Range-bound; watch confirmation.'
     else:
         suggested_action = 'HOLD'
+        signal = 'BUY-ON-DIP' if trend_up else 'HOLD'
         reason = 'โมเมนตัมยังพอถือได้ / Momentum is constructive; continue holding.'
+
+    if current_price <= 0:
+        current_price = avg_cost if avg_cost > 0 else 1.0
+
+    entry_low = current_price * (0.98 if trend_up else 0.965)
+    entry_high = current_price * (1.01 if trend_up else 0.99)
+    stop_loss_price = current_price * (0.94 if trend_up else 0.92)
+    target_price = current_price * (1.08 if trend_up else 1.06)
+    target_price_2 = current_price * (1.14 if trend_up else 1.1)
+
+    risk_per_share = max(entry_high - stop_loss_price, 0.01)
+    reward_per_share = max(target_price - entry_high, 0.01)
+    rr_ratio = reward_per_share / risk_per_share
+
+    # Risk sizing heuristic (Phase B): tighter with weaker confidence.
+    base_risk_pct = 2.0 if trend_up else 1.2
+    if suggested_action in ['CUT LOSS', 'WATCH']:
+        base_risk_pct = 0.8
+    if rr_ratio < 1.2:
+        base_risk_pct *= 0.6
+    elif rr_ratio > 2.0:
+        base_risk_pct *= 1.15
+    position_risk_pct = max(0.5, min(3.0, base_risk_pct))
+
+    confidence = 55
+    if trend_up:
+        confidence += 12
+    if suggested_action == 'HOLD':
+        confidence += 8
+    if suggested_action == 'TAKE PROFIT':
+        confidence += 5
+    if suggested_action in ['CUT LOSS', 'WATCH']:
+        confidence -= 10
+    if rr_ratio >= 2:
+        confidence += 8
+    elif rr_ratio < 1:
+        confidence -= 12
+    confidence = max(20, min(92, int(round(confidence))))
 
     return {
         'ticker': ticker,
@@ -676,8 +720,15 @@ def build_trade_plan(asset: dict) -> dict:
         'avg_cost': avg_cost,
         'profit_pct': profit_pct,
         'suggested_action': suggested_action,
-        'target_price': current_price * 1.08,
-        'stop_loss_price': current_price * 0.94,
+        'signal': signal,
+        'entry_low': entry_low,
+        'entry_high': entry_high,
+        'target_price': target_price,
+        'target_price_2': target_price_2,
+        'stop_loss_price': stop_loss_price,
+        'rr_ratio': rr_ratio,
+        'position_risk_pct': position_risk_pct,
+        'confidence': confidence,
         'reason': reason,
     }
 
@@ -1143,7 +1194,7 @@ async def main_page(client):
                                 bias = 'Bullish' if plan['suggested_action'] in ['HOLD', 'TAKE PROFIT'] else 'Defensive'
                                 with ui.row().classes('w-full justify-between items-center rounded-xl bg-white/5 border border-white/10 px-3 py-2'):
                                     ui.label(plan['ticker']).classes('text-sm font-black text-white')
-                                    ui.label(f"Bias: {bias}").classes('text-[10px] font-bold text-gray-300')
+                                    ui.label(f"{plan['signal']} • C{plan['confidence']}").classes('text-[10px] font-bold text-gray-300')
                         else:
                             ui.label('ยังไม่มี holdings สำหรับ preview').classes('text-xs text-gray-400')
                     return
@@ -1166,10 +1217,17 @@ async def main_page(client):
                         ticker = plan['ticker']
                         current_price = plan['current_price'] * curr_rate
                         avg_cost = plan['avg_cost'] * curr_rate
+                        entry_low = plan['entry_low'] * curr_rate
+                        entry_high = plan['entry_high'] * curr_rate
                         target_price = plan['target_price'] * curr_rate
+                        target_price_2 = plan['target_price_2'] * curr_rate
                         stop_loss_price = plan['stop_loss_price'] * curr_rate
                         profit_pct = plan['profit_pct']
                         suggested_action = plan['suggested_action']
+                        signal = plan['signal']
+                        rr_ratio = plan['rr_ratio']
+                        pos_risk = plan['position_risk_pct']
+                        confidence = plan['confidence']
                         reason = plan['reason']
                         txt_class, badge_class = action_theme.get(suggested_action, ('text-gray-300', 'bg-white/5 border-white/10'))
 
@@ -1178,13 +1236,19 @@ async def main_page(client):
                                 with ui.column().classes('gap-0'):
                                     ui.label(ticker).classes('text-xl font-black text-white tracking-wider')
                                     ui.label(f'Current {curr_sym}{current_price:,.2f} • Avg {curr_sym}{avg_cost:,.2f}').classes('text-[11px] text-gray-500 font-bold')
-                                ui.label(suggested_action).classes(f'text-[10px] font-black tracking-widest px-3 py-1 rounded-full border {txt_class} {badge_class}')
+                                with ui.column().classes('items-end gap-1'):
+                                    ui.label(suggested_action).classes(f'text-[10px] font-black tracking-widest px-3 py-1 rounded-full border {txt_class} {badge_class}')
+                                    ui.label(f'{signal} • C{confidence}').classes('text-[9px] text-gray-400 font-black')
 
                             with ui.row().classes('w-full justify-between items-center gap-3 flex-wrap'):
                                 pnl_class = 'text-[#32D74B]' if profit_pct >= 0 else 'text-[#FF453A]'
                                 ui.label(f'Profit {profit_pct:+.2f}%').classes(f'text-sm font-black {pnl_class}')
-                                ui.label(f'Target {curr_sym}{target_price:,.2f}').classes('text-xs text-[#32D74B] font-bold')
-                                ui.label(f'Stop {curr_sym}{stop_loss_price:,.2f}').classes('text-xs text-[#FF453A] font-bold')
+                                ui.label(f'Entry {curr_sym}{entry_low:,.2f}-{curr_sym}{entry_high:,.2f}').classes('text-xs text-[#39C8FF] font-bold')
+                                ui.label(f'TP1 {curr_sym}{target_price:,.2f}').classes('text-xs text-[#32D74B] font-bold')
+                                ui.label(f'TP2 {curr_sym}{target_price_2:,.2f}').classes('text-xs text-[#20D6A1] font-bold')
+                                ui.label(f'SL {curr_sym}{stop_loss_price:,.2f}').classes('text-xs text-[#FF453A] font-bold')
+                                ui.label(f'R:R {rr_ratio:.2f}').classes('text-xs text-[#FCD535] font-black')
+                                ui.label(f'PosRisk {pos_risk:.1f}%').classes('text-xs text-gray-300 font-black')
 
                             ui.label(reason).classes('text-xs text-gray-400 leading-relaxed')
 
@@ -1224,11 +1288,12 @@ async def main_page(client):
                 if not is_pro:
                     teaser_issue = report['issues'][0] if report['issues'] else 'Risk diagnosis available in PRO'
                     teaser_action = report['actions'][0] if report['actions'] else 'Unlock PRO for full action plan'
-                    with ui.column().classes('w-full gap-2 rounded-2xl bg-[#0B0E14]/70 border border-white/10 p-4'):
-                        ui.label(f'Issue: {teaser_issue}').classes('text-sm text-gray-300 font-bold')
-                        ui.label(f'Action: {teaser_action}').classes('text-xs text-gray-400')
-                        ui.button('UNLOCK FULL HEALTH DIAGNOSIS', on_click=lambda: ui.navigate.to('/payment')).classes('bg-[#FCD535] text-black font-black rounded-full px-5 py-2 text-xs w-full md:w-auto')
-                    return
+                with ui.column().classes('w-full gap-2 rounded-2xl bg-[#0B0E14]/70 border border-white/10 p-4'):
+                    ui.label(f'Issue: {teaser_issue}').classes('text-sm text-gray-300 font-bold')
+                    ui.label(f'Action: {teaser_action}').classes('text-xs text-gray-400')
+                    ui.label('Phase B unlock: Entry/Exit signals + Position sizing + Confidence scoring').classes('text-[10px] text-[#39C8FF] font-bold')
+                    ui.button('UNLOCK FULL HEALTH DIAGNOSIS', on_click=lambda: ui.navigate.to('/payment')).classes('bg-[#FCD535] text-black font-black rounded-full px-5 py-2 text-xs w-full md:w-auto')
+                return
 
                 with ui.row().classes('w-full gap-2 flex-wrap'):
                     for k, v in report['subscores'].items():
