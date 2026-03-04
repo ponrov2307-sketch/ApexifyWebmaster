@@ -27,6 +27,7 @@ def update_global_cache_batch(tickers: list):
                 if len(series) > 0:
                     closes = [float(c) for c in series.tolist()]
                     GLOBAL_PRICE_CACHE[ticker] = closes[-1] 
+                    SPARKLINE_CACHE_TIME[ticker] = time.time()
                     GLOBAL_SPARKLINE_CACHE[ticker] = closes[-40:] # เอาแค่ 40 แท่งล่าสุดให้เส้นสวยๆ
             except Exception: pass
     except Exception as e:
@@ -76,7 +77,31 @@ def get_live_price(ticker: str) -> float:
         return GLOBAL_PRICE_CACHE.get(ticker, 0.0)
 
 def get_sparkline_data(ticker: str, days: int = 7):
+    now = time.time()
     closes = GLOBAL_SPARKLINE_CACHE.get(ticker, [])
+    last_update = SPARKLINE_CACHE_TIME.get(ticker, 0)
+
+    # Reuse cache briefly to reduce API pressure.
+    if closes and (now - last_update) < SPARKLINE_CACHE_TTL:
+        is_up = closes[-1] >= closes[0] if len(closes) > 1 else True
+        return closes, is_up
+
+    # Prefer intraday candles so sparkline can move during the day.
+    try:
+        intraday = yf.download(ticker, period="5d", interval="15m", progress=False, ignore_tz=True)
+        if not intraday.empty:
+            if isinstance(intraday.columns, pd.MultiIndex):
+                series = intraday['Close'][ticker].dropna()
+            else:
+                series = intraday['Close'].dropna()
+            if len(series) > 0:
+                closes = [float(c) for c in series.tolist()][-40:]
+                GLOBAL_SPARKLINE_CACHE[ticker] = closes
+                SPARKLINE_CACHE_TIME[ticker] = now
+    except:
+        pass
+
+    # Fallback to daily candles if intraday is unavailable.
     if not closes:
         try:
             data = yf.download(ticker, period=f"{days}d", interval="1d", progress=False)
@@ -87,8 +112,12 @@ def get_sparkline_data(ticker: str, days: int = 7):
                     closes = data['Close'].dropna().tolist()
                 closes = [float(c) for c in closes]
                 GLOBAL_SPARKLINE_CACHE[ticker] = closes
+                SPARKLINE_CACHE_TIME[ticker] = now
         except:
             return [], True
+
+    if not closes:
+        return [], True
     is_up = closes[-1] >= closes[0] if len(closes) > 1 else True
     return closes, is_up
 
