@@ -1,6 +1,6 @@
 import yfinance as yf
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, UTC
 from core.config import MARKET_INDICES
 import requests # 🌟 เพิ่มไว้บรรทัดบนสุดของไฟล์
 import time
