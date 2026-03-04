@@ -12,7 +12,7 @@ from web.components.ticker import create_ticker
 from web.components.stats import create_stats_cards
 from web.components.table import create_portfolio_table, get_logo_url_for_ticker
 from web.components.charts import show_candlestick_chart
-from services.yahoo_finance import get_sparkline_data, get_live_price, update_global_cache_batch, get_real_dividend_data, get_portfolio_historical_growth
+from services.yahoo_finance import get_sparkline_data, get_live_price, update_global_cache_batch, get_real_dividend_data, get_portfolio_historical_growth, get_stock_duel_data
 from services.news_fetcher import fetch_stock_news_summary
 from services.gemini_ai import generate_apexify_report
 
@@ -632,8 +632,12 @@ def redeem_code_from_backend(telegram_id: str, code: str):
 
 def get_matchmaker_universe():
     return [
-        'NVDA', 'MSFT', 'AAPL', 'GOOGL', 'AMZN', 'META', 'TSLA',
-        'AVGO', 'AMD', 'PLTR', 'JPM', 'V', 'COST', 'NFLX', 'SPY',
+        'NVDA', 'MSFT', 'AAPL', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AVGO', 'AMD', 'PLTR',
+        'NFLX', 'ADBE', 'CRM', 'ORCL', 'INTC', 'QCOM', 'ASML', 'MU', 'TSM', 'SMCI',
+        'JPM', 'V', 'MA', 'GS', 'BAC', 'C', 'BRK-B', 'BLK', 'AXP', 'MS',
+        'COST', 'WMT', 'PG', 'KO', 'PEP', 'MCD', 'NKE', 'SBUX', 'HD', 'LOW',
+        'XOM', 'CVX', 'SLB', 'CAT', 'DE', 'GE', 'LMT', 'BA', 'UNH', 'LLY',
+        'SPY', 'QQQ', 'DIA', 'IWM', 'VOO', 'VTI', 'XLF', 'XLK', 'XLE', 'XLV',
     ]
 
 
@@ -1968,64 +1972,132 @@ async def heatmap_page():
                     ui.label('PREMIUM FEATURE').classes('text-xl font-black text-[#FCD535] tracking-widest')
                     ui.label('แผนภาพความร้อนและตารางเชิงลึก สงวนสิทธิ์สำหรับแพ็กเกจ VIP และ PRO').classes('text-gray-300 mb-6 text-sm')
                     ui.button('UPGRADE NOW', on_click=lambda: ui.navigate.to('/payment')).classes('w-full bg-[#FCD535] text-black font-black py-3 rounded-xl hover:scale-105 transition-transform shadow-[0_0_20px_rgba(252,213,53,0.3)]')
-# 6. หน้าเปรียบเทียบดัชนี (vs S&P 500) - Premium UI
+# 6. 2-Stock Return Simulator (Premium)
 # ==========================================
-from services.yahoo_finance import get_sp500_ytd
-
 @ui.page('/sp500')
 @standard_page_frame
 async def sp500_page():
     ui.query('body').style(f'background-color: {COLORS.get("bg", "#0D1117")}; font-family: "Inter", sans-serif;')
-    create_ticker() 
+    create_ticker()
 
     with ui.column().classes('w-full max-w-7xl mx-auto p-4 md:p-8 gap-6 pt-[110px] md:pt-[120px]'):
-        # Header
         with ui.row().classes('w-full justify-between items-end flex flex-col md:flex-row gap-2'):
             with ui.column().classes('gap-1'):
-                ui.label('PORTFOLIO vs S&P 500').classes('text-2xl md:text-3xl font-black text-white tracking-widest uppercase')
-                ui.label('เทียบประสิทธิภาพพอร์ตของคุณกับดัชนีตลาดโลก (YTD)').classes('text-xs md:text-sm text-gray-400')
-            ui.label('Performance Benchmark').classes('text-[10px] md:text-xs text-[#D0FD3E] font-bold bg-[#D0FD3E]/10 px-3 py-1 rounded-full border border-[#D0FD3E]/30 tracking-widest uppercase')
+                ui.label('2-STOCK RETURN SIMULATOR').classes('text-2xl md:text-3xl font-black text-white tracking-widest uppercase')
+                ui.label('เทียบผลตอบแทนหุ้น 2 ตัวแบบเข้าใจง่าย (5/10/15/20/30/50 ปี)').classes('text-xs md:text-sm text-gray-400')
+            ui.label('Backtest View').classes('text-[10px] md:text-xs text-[#D0FD3E] font-bold bg-[#D0FD3E]/10 px-3 py-1 rounded-full border border-[#D0FD3E]/30 tracking-widest uppercase')
 
-        months, sp500_returns = await run.io_bound(get_sp500_ytd)
-        # จำลองผลตอบแทนพอร์ต (คุณสามารถเปลี่ยนเป็นการคำนวณจริงได้ในอนาคต)
-        portfolio_returns = [round(r + random.uniform(-1.5, 2.5), 2) for r in sp500_returns]
+        with ui.row().classes('w-full gap-3 flex-col md:flex-row'):
+            ticker_a_input = ui.input('Stock A').props('outlined dense').classes('flex-1').style('text-transform: uppercase;')
+            ticker_a_input.set_value('AAPL')
+            ticker_b_input = ui.input('Stock B').props('outlined dense').classes('flex-1').style('text-transform: uppercase;')
+            ticker_b_input.set_value('MSFT')
+            year_select = ui.select(options=[5, 10, 15, 20, 30, 50], value=10, label='Horizon (Years)').props('outlined dense').classes('w-full md:w-48')
+            compare_btn = ui.button('COMPARE', icon='insights').classes('bg-[#20D6A1] text-black font-black rounded-xl px-5 py-3')
 
-        # 🌟 สรุปตัวเลขด้านบน (Glassmorphism Stats)
-        with ui.row().classes('w-full gap-4 md:gap-6 mt-4 items-stretch flex-col md:flex-row'):
-            port_final = portfolio_returns[-1] if portfolio_returns else 0
-            sp_final = sp500_returns[-1] if sp500_returns else 0
-            alpha = port_final - sp_final
-            
-            alpha_color = '#32D74B' if alpha >= 0 else '#FF453A'
-            alpha_sign = '+' if alpha >= 0 else ''
-            alpha_glow = 'rgba(50,215,75,0.3)' if alpha >= 0 else 'rgba(255,69,58,0.3)'
+        ui.label('สมมติลงทุนเริ่มต้น $10,000 เท่ากันทั้งสองตัว และแสดงกราฟมูลค่าเงินลงทุน').classes('text-xs text-gray-500 -mt-1')
 
-            with ui.column().classes('flex-1 bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] items-center border border-white/5 shadow-lg relative overflow-hidden'):
-                ui.label('PORTFOLIO YTD').classes('text-[10px] md:text-xs text-gray-500 font-bold tracking-widest uppercase')
-                ui.label(f'{port_final}%').classes('text-3xl md:text-4xl font-black text-white mt-1')
+        result_section = ui.column().classes('w-full gap-5')
 
-            with ui.column().classes('flex-1 bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] items-center border border-white/5 shadow-lg'):
-                ui.label('S&P 500 YTD').classes('text-[10px] md:text-xs text-gray-500 font-bold tracking-widest uppercase')
-                ui.label(f'{sp_final}%').classes('text-3xl md:text-4xl font-black text-[#3b82f6] mt-1 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]')
+        def sample_rows(data: dict):
+            rows = []
+            total = len(data['labels'])
+            step = max(1, total // 180)
+            for i in range(0, total, step):
+                rows.append({
+                    'date': data['labels'][i],
+                    'a_close': data['a_close'][i],
+                    'b_close': data['b_close'][i],
+                    'a_return_pct': data['a_return_pct'][i],
+                    'b_return_pct': data['b_return_pct'][i],
+                    'a_value': data['a_value'][i],
+                    'b_value': data['b_value'][i],
+                })
+            return rows
 
-            with ui.column().classes('flex-1 bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] items-center border border-white/5 shadow-lg relative'):
-                ui.element('div').classes('absolute inset-0 bg-gradient-to-t from-transparent to-transparent opacity-20 pointer-events-none').style(f'background-image: radial-gradient(circle at bottom, {alpha_color}, transparent 70%);')
-                ui.label('ALPHA (BEAT MARKET)').classes('text-[10px] md:text-xs text-gray-500 font-bold tracking-widest uppercase z-10')
-                ui.label(f'{alpha_sign}{alpha:.2f}%').classes('text-3xl md:text-4xl font-black z-10 mt-1').style(f'color: {alpha_color}; text-shadow: 0 0 15px {alpha_glow};')
+        def render_results(data: dict):
+            result_section.clear()
+            summary = data['summary']
+            a_ticker = data['ticker_a']
+            b_ticker = data['ticker_b']
 
-        # Glassmorphism Chart
-        with ui.card().classes('w-full bg-[#12161E]/60 backdrop-blur-xl border border-white/5 p-4 md:p-6 rounded-[32px] h-[400px] md:h-[500px] shadow-2xl mt-2 relative overflow-hidden'):
-            ui.echart({
-                'tooltip': {'trigger': 'axis', 'backgroundColor': '#12161E', 'borderColor': '#D0FD3E', 'textStyle': {'color': '#fff'}, 'valueFormatter': "(value) => value + '%'"},
-                'legend': {'data': ['My Portfolio', 'S&P 500 (VOO)'], 'textStyle': {'color': '#8B949E', 'fontWeight': 'bold'}, 'top': 0},
-                'grid': {'left': '5%', 'right': '5%', 'bottom': '5%', 'top': '15%', 'containLabel': True},
-                'xAxis': {'type': 'category', 'data': months, 'axisLine': {'lineStyle': {'color': '#8B949E'}}},
-                'yAxis': {'type': 'value', 'axisLabel': {'formatter': '{value} %', 'fontWeight': 'bold'}, 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}},
-                'series': [
-                    {'name': 'My Portfolio', 'type': 'line', 'data': portfolio_returns, 'smooth': True, 'symbol': 'circle', 'symbolSize': 8, 'itemStyle': {'color': '#D0FD3E'}, 'lineStyle': {'width': 4, 'shadowColor': 'rgba(208,253,62,0.5)', 'shadowBlur': 10}},
-                    {'name': 'S&P 500 (VOO)', 'type': 'line', 'data': sp500_returns, 'smooth': True, 'symbol': 'none', 'itemStyle': {'color': '#3b82f6'}, 'lineStyle': {'width': 3, 'type': 'dashed', 'shadowColor': 'rgba(59,130,246,0.3)', 'shadowBlur': 5}}
-                ]
-            }).classes('w-full h-full z-10')
+            winner = a_ticker if summary['a_total_return'] >= summary['b_total_return'] else b_ticker
+            spread = round(abs(summary['a_total_return'] - summary['b_total_return']), 2)
+
+            with result_section:
+                with ui.row().classes('w-full gap-4 md:gap-6 items-stretch flex-col md:flex-row'):
+                    with ui.column().classes('flex-1 bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] items-center border border-white/5 shadow-lg'):
+                        ui.label(f'{a_ticker} RETURN').classes('text-[10px] md:text-xs text-gray-500 font-bold tracking-widest uppercase')
+                        ui.label(f"{summary['a_total_return']:+.2f}%").classes('text-3xl md:text-4xl font-black text-white mt-1')
+                        ui.label(f"CAGR {summary['a_cagr']:.2f}% • MDD {summary['a_max_drawdown']:.2f}%").classes('text-xs text-gray-400')
+                    with ui.column().classes('flex-1 bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] items-center border border-white/5 shadow-lg'):
+                        ui.label(f'{b_ticker} RETURN').classes('text-[10px] md:text-xs text-gray-500 font-bold tracking-widest uppercase')
+                        ui.label(f"{summary['b_total_return']:+.2f}%").classes('text-3xl md:text-4xl font-black text-white mt-1')
+                        ui.label(f"CAGR {summary['b_cagr']:.2f}% • MDD {summary['b_max_drawdown']:.2f}%").classes('text-xs text-gray-400')
+                    with ui.column().classes('flex-1 bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] items-center border border-white/5 shadow-lg'):
+                        ui.label('WINNER').classes('text-[10px] md:text-xs text-gray-500 font-bold tracking-widest uppercase')
+                        ui.label(winner).classes('text-3xl md:text-4xl font-black text-[#20D6A1] mt-1')
+                        ui.label(f'Outperformed by {spread:.2f}%').classes('text-xs text-gray-400')
+
+                with ui.card().classes('w-full bg-[#12161E]/60 backdrop-blur-xl border border-white/5 p-4 md:p-6 rounded-[32px] h-[420px] md:h-[520px] shadow-2xl'):
+                    ui.echart({
+                        'tooltip': {'trigger': 'axis', 'backgroundColor': '#12161E', 'borderColor': '#20D6A1', 'textStyle': {'color': '#fff'}},
+                        'legend': {'data': [a_ticker, b_ticker], 'textStyle': {'color': '#8B949E', 'fontWeight': 'bold'}, 'top': 0},
+                        'grid': {'left': '5%', 'right': '5%', 'bottom': '5%', 'top': '15%', 'containLabel': True},
+                        'xAxis': {'type': 'category', 'data': data['labels'], 'axisLine': {'lineStyle': {'color': '#8B949E'}}},
+                        'yAxis': {'type': 'value', 'axisLabel': {'formatter': '${value}'}, 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}},
+                        'series': [
+                            {'name': a_ticker, 'type': 'line', 'data': data['a_value'], 'smooth': True, 'showSymbol': False, 'lineStyle': {'width': 3, 'color': '#20D6A1'}},
+                            {'name': b_ticker, 'type': 'line', 'data': data['b_value'], 'smooth': True, 'showSymbol': False, 'lineStyle': {'width': 3, 'color': '#39C8FF'}},
+                        ]
+                    }).classes('w-full h-full')
+
+                ui.label('Comparison Table').classes('text-lg md:text-xl font-black text-white tracking-widest uppercase')
+                ui.table(
+                    columns=[
+                        {'name': 'date', 'label': 'Date', 'field': 'date'},
+                        {'name': 'a_close', 'label': f'{a_ticker} Close', 'field': 'a_close'},
+                        {'name': 'b_close', 'label': f'{b_ticker} Close', 'field': 'b_close'},
+                        {'name': 'a_return_pct', 'label': f'{a_ticker} Return %', 'field': 'a_return_pct'},
+                        {'name': 'b_return_pct', 'label': f'{b_ticker} Return %', 'field': 'b_return_pct'},
+                        {'name': 'a_value', 'label': f'{a_ticker} Value ($)', 'field': 'a_value'},
+                        {'name': 'b_value', 'label': f'{b_ticker} Value ($)', 'field': 'b_value'},
+                    ],
+                    rows=sample_rows(data),
+                    row_key='date',
+                    pagination=30
+                ).classes('w-full ax-card').props('dense')
+
+        async def compare():
+            symbol_a = str(ticker_a_input.value or '').strip().upper()
+            symbol_b = str(ticker_b_input.value or '').strip().upper()
+            years = int(year_select.value or 10)
+            if not symbol_a or not symbol_b:
+                ui.notify('กรอกหุ้นให้ครบทั้ง 2 ตัว', type='warning')
+                return
+
+            compare_btn.disable()
+            result_section.clear()
+            with result_section:
+                with ui.column().classes('w-full ax-card p-8 items-center gap-3'):
+                    ui.spinner(size='lg')
+                    ui.label('Loading historical data...').classes('text-sm text-gray-300')
+
+            data = await run.io_bound(get_stock_duel_data, symbol_a, symbol_b, years, 10000.0)
+            compare_btn.enable()
+            if not data:
+                result_section.clear()
+                with result_section:
+                    with ui.column().classes('w-full ax-card p-8 items-center text-center gap-2'):
+                        ui.icon('warning', size='3rem').classes('text-[#FF5E6C]')
+                        ui.label('โหลดข้อมูลไม่สำเร็จ').classes('text-lg font-black text-white')
+                        ui.label('เช็กสัญลักษณ์หุ้นหรือเครือข่าย แล้วลองอีกครั้ง').classes('text-sm text-gray-400')
+                return
+
+            render_results(data)
+
+        compare_btn.on_click(compare)
+        await compare()
 
 # ==========================================
 # 7. AI STOCK MATCHMAKER (TINDER STYLE)
@@ -2057,10 +2129,11 @@ async def matchmaker_page():
 
         universe = get_matchmaker_universe()
         random.shuffle(universe)
-        queue = universe[:10]
+        queue = universe[:min(30, len(universe))]
         state = {'index': 0, 'liked': 0, 'skipped': 0, 'card_cache': {}}
 
         with ui.row().classes('w-full gap-2'):
+            ui.label(f'CARDS THIS ROUND: {len(queue)}').classes('text-xs font-black px-3 py-1 rounded-full bg-[#39C8FF]/15 text-[#39C8FF] border border-[#39C8FF]/30')
             liked_badge = ui.label('LIKED: 0').classes('text-xs font-black px-3 py-1 rounded-full bg-[#20D6A1]/15 text-[#20D6A1] border border-[#20D6A1]/30')
             skipped_badge = ui.label('SKIPPED: 0').classes('text-xs font-black px-3 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
 

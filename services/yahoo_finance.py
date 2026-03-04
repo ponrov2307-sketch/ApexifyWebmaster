@@ -116,6 +116,103 @@ def get_sp500_ytd():
         return months, returns
     except: return ['Jan'], [0]
 
+
+def _calc_max_drawdown(series: pd.Series) -> float:
+    if series is None or series.empty:
+        return 0.0
+    peak = series.cummax()
+    drawdown = ((series - peak) / peak) * 100
+    return float(round(drawdown.min(), 2))
+
+
+def get_stock_duel_data(ticker_a: str, ticker_b: str, years: int = 10, initial_capital: float = 10000.0):
+    """Compare two stocks over a selected horizon and return chart+table ready data."""
+    try:
+        ticker_a = str(ticker_a or '').strip().upper()
+        ticker_b = str(ticker_b or '').strip().upper()
+        years = int(years or 10)
+        if not ticker_a or not ticker_b:
+            return None
+
+        period = 'max' if years >= 50 else f'{years}y'
+        interval = '1mo'
+
+        data_a = yf.download(ticker_a, period=period, interval=interval, progress=False, auto_adjust=True)
+        data_b = yf.download(ticker_b, period=period, interval=interval, progress=False, auto_adjust=True)
+        if data_a.empty or data_b.empty:
+            return None
+
+        close_a = data_a['Close']
+        close_b = data_b['Close']
+        if isinstance(close_a, pd.DataFrame):
+            close_a = close_a.iloc[:, 0]
+        if isinstance(close_b, pd.DataFrame):
+            close_b = close_b.iloc[:, 0]
+
+        close_a = close_a.dropna()
+        close_b = close_b.dropna()
+        if close_a.empty or close_b.empty:
+            return None
+
+        df = pd.concat([close_a.rename('a_close'), close_b.rename('b_close')], axis=1).dropna()
+        if df.empty:
+            return None
+
+        # Ensure requested horizon even when provider returns extra history.
+        if years > 0:
+            cutoff = pd.Timestamp(datetime.now()) - pd.DateOffset(years=years)
+            df = df[df.index >= cutoff]
+            if df.empty:
+                return None
+
+        a_base = float(df['a_close'].iloc[0])
+        b_base = float(df['b_close'].iloc[0])
+        if a_base <= 0 or b_base <= 0:
+            return None
+
+        a_shares = float(initial_capital) / a_base
+        b_shares = float(initial_capital) / b_base
+
+        df['a_value'] = df['a_close'] * a_shares
+        df['b_value'] = df['b_close'] * b_shares
+        df['a_return_pct'] = ((df['a_close'] / a_base) - 1) * 100
+        df['b_return_pct'] = ((df['b_close'] / b_base) - 1) * 100
+
+        days_span = max((df.index[-1] - df.index[0]).days, 1)
+        years_span = max(days_span / 365.25, 0.01)
+
+        a_total = float(df['a_return_pct'].iloc[-1])
+        b_total = float(df['b_return_pct'].iloc[-1])
+        a_cagr = ((df['a_value'].iloc[-1] / float(initial_capital)) ** (1 / years_span) - 1) * 100
+        b_cagr = ((df['b_value'].iloc[-1] / float(initial_capital)) ** (1 / years_span) - 1) * 100
+
+        result = {
+            'ticker_a': ticker_a,
+            'ticker_b': ticker_b,
+            'years': years,
+            'initial_capital': float(initial_capital),
+            'labels': df.index.strftime('%Y-%m').tolist(),
+            'a_close': [round(float(v), 2) for v in df['a_close'].tolist()],
+            'b_close': [round(float(v), 2) for v in df['b_close'].tolist()],
+            'a_value': [round(float(v), 2) for v in df['a_value'].tolist()],
+            'b_value': [round(float(v), 2) for v in df['b_value'].tolist()],
+            'a_return_pct': [round(float(v), 2) for v in df['a_return_pct'].tolist()],
+            'b_return_pct': [round(float(v), 2) for v in df['b_return_pct'].tolist()],
+            'summary': {
+                'a_total_return': round(a_total, 2),
+                'b_total_return': round(b_total, 2),
+                'a_cagr': round(float(a_cagr), 2),
+                'b_cagr': round(float(b_cagr), 2),
+                'a_final_value': round(float(df['a_value'].iloc[-1]), 2),
+                'b_final_value': round(float(df['b_value'].iloc[-1]), 2),
+                'a_max_drawdown': _calc_max_drawdown(df['a_value']),
+                'b_max_drawdown': _calc_max_drawdown(df['b_value']),
+            }
+        }
+        return result
+    except Exception:
+        return None
+
 def get_real_dividend_data(tickers: list):
     dividend_items = {}
     try:

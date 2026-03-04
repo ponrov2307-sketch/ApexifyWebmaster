@@ -192,7 +192,7 @@ def create_layout():
             ('favorite', 'AI Matchmaker', '/matchmaker', ['pro', 'vip', 'admin']),
             ('attach_money', 'Dividend', '/dividend', ['pro', 'vip', 'admin']),
             ('grid_on', 'Heatmap', '/heatmap', ['pro', 'vip', 'admin']),
-            ('trending_up', 'vs S&P500', '/sp500', ['pro', 'vip', 'admin']),
+            ('trending_up', '2-Stock Simulator', '/sp500', ['pro', 'vip', 'admin']),
             ('notifications_active', 'Price Alerts', '/alerts', ['pro', 'vip', 'admin']),
             ('download', 'Export', '/export', ['pro', 'vip', 'admin']),
             ('workspace_premium', 'Upgrade PRO', '/payment', ['free', 'pro', 'vip', 'admin'])
