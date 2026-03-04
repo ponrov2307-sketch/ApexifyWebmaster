@@ -18,6 +18,12 @@ def auto_push():
         print(f"[{now}] Starting Auto-Sync...")
 
         try:
+            conflicted = run_git(["diff", "--name-only", "--diff-filter=U"], check=False, capture_output=True)
+            if conflicted.stdout.strip():
+                print(f"[{now}] Sync skipped: unresolved merge conflicts detected.")
+                time.sleep(180)
+                continue
+
             run_git(["fetch", "origin"])
 
             run_git(["add", "."])
