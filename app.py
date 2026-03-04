@@ -3111,7 +3111,7 @@ async def payment_page():
                     with ui.column().classes('gap-3'):
                         ui.label('ADVANCED').classes('text-xs font-black text-[#6ceac2] tracking-[0.25em] uppercase')
                         ui.label('VIP').classes('text-5xl font-black text-white')
-                        ui.label(f"฿{'1,990' if is_annual else '299'} {'/ปี' if is_annual else '/เดือน'}").classes('text-4xl font-black text-white')
+                        ui.label(f"฿{'2,990' if is_annual else '299'} {'/ปี' if is_annual else '/เดือน'}").classes('text-4xl font-black text-white')
                         ui.label('ปลดล็อก AI วิเคราะห์กราฟแบบละเอียด').classes('text-sm text-[#9acfbf]')
                         ui.element('div').classes('w-full h-px bg-[#1edc8b]/25 my-2')
                         for text in ['ฟีเจอร์ Basic ทั้งหมด', 'สแกนกราฟ Unlimited (RSI, MACD, Volume)', 'Watchlist สูงสุด 10 ตัว', 'AI คำนวณแนวรับ-แนวต้านอัตโนมัติ', 'แผนเทรดจาก AI พร้อมจุดเข้า/TP/SL']:
