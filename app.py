@@ -861,35 +861,36 @@ async def main_page(client):
             app.storage.client['dashboard_group'] = e.value
             await smart_update() # รันทันที ปลอดภัย 100%
 
-        # 📦 แถวบน: Profile + VIP Command Center (การ์ดเล็กลง)
-        with ui.row().classes('w-full gap-3 md:gap-4 items-stretch flex-col lg:flex-row'):
-            with ui.column().classes('flex-1 bg-[#12161E]/80 backdrop-blur-xl p-4 md:p-5 rounded-[20px] border border-white/5 shadow-lg gap-2 transition-all hover:border-white/10 ax-card-hover'):
+        # 📦 แถวบน: 2-column fixed (desktop) + compact stack (mobile)
+        with ui.grid(columns='grid-cols-1 lg:grid-cols-2').classes('w-full gap-3 md:gap-4 items-stretch'):
+            with ui.column().classes('min-w-0 bg-[#12161E]/80 backdrop-blur-xl p-3 md:p-5 rounded-[18px] md:rounded-[20px] border border-white/5 shadow-lg gap-2 transition-all hover:border-white/10 ax-card-hover'):
                 with ui.row().classes('items-center gap-3'):
-                    ui.icon('account_circle', size='lg').classes(d['role_color'])
+                    ui.icon('account_circle', size='md').classes(d['role_color'])
                     with ui.column().classes('gap-0'):
-                        ui.label(d['t_welcome']).classes('text-[10px] text-gray-500 font-bold uppercase tracking-wider')
-                        ui.label(d['username']).classes('text-base md:text-lg font-black text-white tracking-wide leading-tight')
+                        ui.label(d['t_welcome']).classes('text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-wider')
+                        ui.label(d['username']).classes('text-sm md:text-lg font-black text-white tracking-wide leading-tight')
                         ui.label(f"{d['role']} MEMBER").classes(f'text-[9px] px-2 py-0.5 mt-1 rounded-full border border-[#D0FD3E]/30 bg-[#D0FD3E]/10 {d["role_color"]} font-black tracking-widest uppercase inline-block')
 
-                with ui.row().classes('w-full gap-2 flex-wrap'):
-                    ui.label(f"TELEGRAM: {str(telegram_id)[-6:] if telegram_id else 'N/A'}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
-                    ui.label(f"CURRENCY: {'THB' if d['curr_sym'] == '฿' else 'USD'}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
-                    ui.label(f"HOLDINGS: {len(d.get('sorted_assets', []))}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
-                    ui.label(f"STATUS: {d.get('status_txt', '-')[:24]}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-[#20D6A1]/10 text-[#20D6A1] border border-[#20D6A1]/25')
-                    ui.label(f"EXPOSURE: {d.get('curr_sym', '$')}{d.get('total_invested', 0):,.0f}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
+                with ui.row().classes('w-full gap-1.5 md:gap-2 flex-wrap'):
+                    chip_cls = 'text-[9px] md:text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10'
+                    ui.label(f"TG: {str(telegram_id)[-6:] if telegram_id else 'N/A'}").classes(chip_cls)
+                    ui.label(f"CUR: {'THB' if d['curr_sym'] == '฿' else 'USD'}").classes(chip_cls)
+                    ui.label(f"HOLDINGS: {len(d.get('sorted_assets', []))}").classes(chip_cls)
+                    ui.label(f"STATUS: {d.get('status_txt', '-')[:18]}").classes('text-[9px] md:text-[10px] font-bold px-2 py-1 rounded-full bg-[#20D6A1]/10 text-[#20D6A1] border border-[#20D6A1]/25')
+                    ui.label(f"EXPOSURE: {d.get('curr_sym', '$')}{d.get('total_invested', 0):,.0f}").classes(chip_cls)
                     auth_at = str(app.storage.user.get('auth_at', '')).replace('T', ' ')[:16] if app.storage.user.get('auth_at') else 'N/A'
-                    ui.label(f"LAST LOGIN: {auth_at}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
+                    ui.label(f"LOGIN: {auth_at}").classes(chip_cls)
 
-            with ui.column().classes('flex-1 justify-center bg-gradient-to-br from-[#161B22] to-[#0B0E14] p-4 md:p-5 rounded-[20px] border border-[#20D6A1]/20 shadow-lg relative overflow-hidden transition-all hover:border-[#39C8FF]/40 min-w-0 ax-neon-ring ax-card-hover'):
-                ui.label('VIP COMMAND CENTER').classes('text-[10px] text-[#39C8FF] font-black tracking-widest uppercase mb-1 z-10')
+            with ui.column().classes('min-w-0 justify-center bg-gradient-to-br from-[#161B22] to-[#0B0E14] p-3 md:p-5 rounded-[18px] md:rounded-[20px] border border-[#20D6A1]/20 shadow-lg relative overflow-hidden transition-all hover:border-[#39C8FF]/40 ax-neon-ring ax-card-hover'):
+                ui.label('VIP COMMAND CENTER').classes('text-[9px] md:text-[10px] text-[#39C8FF] font-black tracking-widest uppercase mb-1 z-10')
                 membership_role = d.get('role', 'FREE')
                 days_left = d.get('days_left')
                 days_text = f'{days_left} DAYS LEFT' if isinstance(days_left, int) and days_left >= 0 else 'NO ACTIVE PACKAGE'
                 days_color = 'text-[#2FE8A8]' if isinstance(days_left, int) and days_left >= 0 else 'text-[#FFFF33]'
-                ui_refs['vip_days'] = ui.label(days_text).classes(f'text-lg md:text-xl font-black {days_color}')
-                ui_refs['vip_status'] = ui.label(f'{membership_role} MEMBER').classes('text-[10px] text-gray-400 font-black tracking-wider')
+                ui_refs['vip_days'] = ui.label(days_text).classes(f'text-base md:text-xl font-black {days_color}')
+                ui_refs['vip_status'] = ui.label(f'{membership_role} MEMBER').classes('text-[9px] md:text-[10px] text-gray-400 font-black tracking-wider')
 
-                redeem_input = ui.input(placeholder='REDEEM CODE').props('dense outlined dark').classes('w-full mt-2')
+                redeem_input = ui.input(placeholder='REDEEM CODE').props('dense outlined dark').classes('w-full mt-1 md:mt-2')
 
                 async def redeem_from_web():
                     code = (redeem_input.value or '').strip().upper()
@@ -916,8 +917,8 @@ async def main_page(client):
                         else:
                             ui.notify('โค้ดไม่ถูกต้อง หรือถูกใช้งานแล้ว', type='negative')
 
-                with ui.row().classes('w-full gap-2 mt-2'):
-                    ui.button('Redeem', on_click=redeem_from_web).props('dense').classes('flex-1 bg-[#20D6A1] text-black font-black rounded-lg text-xs')
+                with ui.row().classes('w-full gap-2 mt-2 flex-col sm:flex-row'):
+                    ui.button('Redeem', on_click=redeem_from_web).props('dense').classes('w-full sm:flex-1 bg-[#20D6A1] text-black font-black rounded-lg text-xs')
 
                     def show_qr_dialog():
                         with ui.dialog() as renew_dialog, ui.card().classes('w-full max-w-md bg-[#0E1C24] border border-[#39C8FF]/30 rounded-3xl p-6'):
@@ -930,7 +931,7 @@ async def main_page(client):
                             ui.button('Close', on_click=renew_dialog.close).props('flat').classes('w-full text-gray-400')
                         renew_dialog.open()
 
-                    ui.button('Renew', on_click=show_qr_dialog).props('dense').classes('flex-1 bg-[#39C8FF]/20 text-[#39C8FF] font-black rounded-lg text-xs border border-[#39C8FF]/40')
+                    ui.button('Renew', on_click=show_qr_dialog).props('dense').classes('w-full sm:flex-1 bg-[#39C8FF]/20 text-[#39C8FF] font-black rounded-lg text-xs border border-[#39C8FF]/40')
 
         # 🌟 จุดที่ 2: โซนเพิ่มสินทรัพย์ ย้ายมาอยู่ใต้ VIP Command Center
         with ui.row().classes('ax-action-strip justify-between items-center md:items-end mt-1 mb-2 gap-4 flex-col md:flex-row'):
