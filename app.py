@@ -1005,9 +1005,11 @@ async def main_page(client):
         days_left = parse_expiry_to_days_left(expiry)
 
         raw_portfolio = await run.io_bound(get_portfolio, user_id) if user_id else []
-        
+        raw_asset_count = len(raw_portfolio)
+
         assets = []
         total_invested, net_worth = 0, 0
+        price_warning_symbols = []
         
         # ==========================================
         # ?? 1. ลูปดึงราคาและคำนวณหุ้น (อัปเดตเพิ่ม Sparkline)
@@ -1022,8 +1024,19 @@ async def main_page(client):
             shares = float(item['shares'])
             avg_cost = float(item['avg_cost'])
             
-            # ?? ดึงราคาแบบ Real-time และ กราฟ Sparkline
-            last_price = await run.io_bound(get_live_price, ticker)
+            # ?? ดึงราคาแบบ Real-time และกราฟ Sparkline
+            live_price = await run.io_bound(get_live_price, ticker)
+            if live_price is None or float(live_price) <= 0:
+                # Price feed fallback: protect dashboard from false drawdown when feed returns 0.
+                last_price = float(avg_cost) if float(avg_cost) > 0 else 0.0
+                price_status = 'fallback_avg_cost'
+                fallback_used = True
+                price_warning_symbols.append(str(ticker))
+            else:
+                last_price = float(live_price)
+                price_status = 'live'
+                fallback_used = False
+
             raw_sparkline, _ = await run.io_bound(get_sparkline_data, ticker)
             sparkline_data = ensure_sparkline_series(raw_sparkline)
             if raw_sparkline and len(raw_sparkline) > 1:
@@ -1049,7 +1062,10 @@ async def main_page(client):
                 'asset_group': item_group,
                 'alert_price': item.get('alert_price', 0),
                 'sparkline': sparkline_data, # ?? ส่งกราฟไปให้ตารางวาด
-                'is_up': is_up               # ?? ส่งสีเขียว/แดงไปให้ตาราง
+                'is_up': is_up,              # ?? ส่งสีเขียว/แดงไปให้ตาราง
+                'price_status': price_status,
+                'price_used': last_price,
+                'fallback_used': fallback_used,
             })
 
        # ==========================================
@@ -1063,7 +1079,11 @@ async def main_page(client):
         is_profit_overall = total_profit >= 0
         
         sorted_assets = sorted(assets, key=lambda x: x['ticker'])
+        filtered_count = len(sorted_assets)
         profit_sorted = sorted(assets, key=lambda x: x['profit_pct'], reverse=True)
+        unique_price_warnings = list(dict.fromkeys(price_warning_symbols))
+        price_warning_count = len(unique_price_warnings)
+        price_warning_symbols_preview = unique_price_warnings[:3]
         
         top_gainer = profit_sorted[0] if profit_sorted and profit_sorted[0]['profit_pct'] > 0 else None
         top_loser = profit_sorted[-1] if profit_sorted and profit_sorted[-1]['profit_pct'] < 0 else None
@@ -1111,6 +1131,26 @@ async def main_page(client):
             # Client can disconnect while background refresh is still running.
             pass
 
+        logger.info(
+            'dashboard_metrics user_id=%s group=%s asset_count_raw=%s asset_count_filtered=%s '
+            'price_warning_count=%s net_worth=%.2f total_invested=%.2f total_profit=%.2f',
+            user_id,
+            current_group,
+            raw_asset_count,
+            filtered_count,
+            price_warning_count,
+            net_worth,
+            total_invested,
+            total_profit,
+        )
+        if filtered_count == 0 and raw_asset_count > 0 and current_group != 'ALL':
+            logger.warning(
+                'dashboard_filter_empty user_id=%s group=%s asset_count_raw=%s',
+                user_id,
+                current_group,
+                raw_asset_count,
+            )
+
         # ส่งข้อมูลทั้งหมดไปแสดงผล
         return {
             't_welcome': t_welcome, 't_status': t_status, 't_port_val': t_port_val, 't_add_btn': t_add_btn, 't_curr_port': t_curr_port,
@@ -1118,6 +1158,8 @@ async def main_page(client):
             'vip_expiry': expiry, 'days_left': days_left,
             'curr_sym': curr_sym, 'curr_rate': curr_rate, 'current_group': current_group,
             'net_worth': net_worth, 'total_profit': total_profit, 'total_invested': total_invested, 'is_profit_overall': is_profit_overall,
+            'asset_count_raw': raw_asset_count, 'filtered_count': filtered_count,
+            'price_warning_count': price_warning_count, 'price_warning_symbols': price_warning_symbols_preview,
             'top_gainer': top_gainer, 'top_loser': top_loser,
             'fg_value': fg_value, 'fg_label': fg_label, 'fg_color': fg_color, 'fg_advice': fg_advice,
             'sidebar_pulse': sidebar_pulse,
@@ -1225,36 +1267,38 @@ async def main_page(client):
                 ui.button(d['t_add_btn'], on_click=handle_add_asset, icon='add').classes('w-full md:w-auto bg-[#D0FD3E] text-black font-black rounded-full px-8 py-3 shadow-[0_0_20px_rgba(208,253,62,0.4)] hover:scale-105 transition-transform text-sm')
                 
                 
-                # 2. ?? ปุุ่ม AI REBALANCE (เพิ่มใหม่)
+                # 2. AI REBALANCE
                 def run_ai_rebalance():
-                    # ?? 1. ดึง Role จากฐานข้อมูลของจริง
+                    # 1. Check role from DB
                     tid = app.storage.user.get('telegram_id')
                     user_info = get_user_by_telegram(tid) if tid else {}
                     role = str(user_info.get('role', 'free')).lower()
                     
-                    # ?? เช็คสิทธิ์ PRO และ Admin เท่านั้น
+                    # PRO and Admin only
                     if role not in ['pro', 'admin']:
-                        ui.notify('?? ฟีเจอร์ AI Rebalance สงวนสิทธิ์สำหรับแพ็กเกจ PRO เท่านั้น!', type='warning')
+                        ui.notify('AI Rebalance is available for PRO only.', type='warning')
                         return
                     
-                    # ?? 2. เตรียมข้อมูลพอร์ต (โค้ดดึงข้อมูลพอร์ตของคุณตามปกติ)
+                    # 2. Prepare portfolio summary with consistent units.
                     port_data = ""
+                    total_port_value = sum(
+                        max(float(a.get('total_value', 0) or 0), 0.0)
+                        for a in d.get('sorted_assets', [])
+                    )
                     for a in d['sorted_assets']:
-                        pct = (a['shares'] * a['last_price'] / d['total_invested']) * 100 if d['total_invested'] > 0 else 0
+                        pct = (float(a.get('total_value', 0) or 0) / total_port_value * 100) if total_port_value > 0 else 0
                         port_data += f"- หุ้น {a['ticker']}: สัดส่วน {pct:.2f}%, กำไร {a['profit_pct']:+.2f}%\n"
                     
-                    # ?? 3. สร้างหน้าต่าง AI (โค้ดหน้าต่าง dialog ตามปกติ) ...
-                    
-                    # ?? 3. สร้างหน้าต่าง AI โหลด
+                    # 3. Build AI dialog
                     with ui.dialog() as ai_dialog, ui.card().classes('w-full max-w-2xl bg-[#0B0E14] border border-[#FCD535]/50 p-6 rounded-3xl shadow-[0_0_50px_rgba(252,213,53,0.2)]'):
-                        ui.label('?? AI REBALANCING STRATEGY').classes('text-xl md:text-2xl font-black text-[#FCD535] mb-2 tracking-widest')
+                        ui.label('AI REBALANCING STRATEGY').classes('text-xl md:text-2xl font-black text-[#FCD535] mb-2 tracking-widest')
                         loading_spinner = ui.spinner(size='xl', color='#FCD535').classes('mx-auto my-8')
                         ai_result = ui.markdown('').classes('text-white text-sm md:text-base leading-relaxed')
                         ui.button('รับทราบ', on_click=ai_dialog.close).classes('mt-6 w-full bg-white/10 text-white font-black rounded-xl py-3 hover:bg-white/20')
                     
                     ai_dialog.open()
                     
-                    # ?? 4. ดึงข้อมูลจาก Gemini API
+                    # 4. Fetch result from Gemini API
                     async def fetch_ai():
                         from services.gemini_ai import generate_rebalance_strategy
                         result = await run.io_bound(generate_rebalance_strategy, port_data)
@@ -1263,8 +1307,8 @@ async def main_page(client):
                     
                     ui.timer(0.1, fetch_ai, once=True)
 
-                # ปุ่มกด AI
-                ui.button('?? AI REBALANCE', on_click=run_ai_rebalance).classes('w-full md:w-auto bg-gradient-to-r from-purple-600 to-indigo-500 text-white font-black rounded-full px-6 py-3 shadow-[0_0_20px_rgba(147,51,234,0.4)] hover:scale-105 transition-transform text-sm')
+                # AI action button
+                ui.button('AI REBALANCE', on_click=run_ai_rebalance).classes('w-full md:w-auto bg-gradient-to-r from-purple-600 to-indigo-500 text-white font-black rounded-full px-6 py-3 shadow-[0_0_20px_rgba(147,51,234,0.4)] hover:scale-105 transition-transform text-sm')
 
         # ?? กล่องมูลค่าพอร์ต (ย้ายลงล่างตามคำขอ)
         with ui.row().classes('w-full justify-between items-center bg-gradient-to-br from-[#12161E] to-[#0B0E14] border border-white/5 p-5 md:p-8 rounded-[28px] shadow-[0_10px_40px_rgba(0,0,0,0.5)] relative overflow-hidden ax-hero-glow ax-neon-ring'):
@@ -1471,6 +1515,11 @@ async def main_page(client):
                 ui.label('YOUR HOLDINGS').classes('ax-section-title')
                 ui.label('Portfolio Filter').classes('text-[10px] text-gray-400 font-bold tracking-widest uppercase')
                 ui.select(['ALL', 'DCA', 'TRADING', 'DIV'], value=d['current_group'], on_change=change_portfolio_group).classes('w-28 text-xs').props('outlined dark dense behavior="menu"')
+                ui_refs['filtered_count_badge'] = ui.label(
+                    f"{d.get('filtered_count', len(d.get('sorted_assets', [])))} assets"
+                ).classes(
+                    'text-[10px] font-black px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10'
+                )
 
             with ui.row().classes('gap-2 bg-white/5 p-1 rounded-lg border border-white/10 shadow-inner'):
                 def set_sort(key):
@@ -1485,6 +1534,40 @@ async def main_page(client):
                 ui.button('A-Z', icon='sort_by_alpha', on_click=lambda: set_sort('ticker')).props('flat dense size=sm').classes(btn_class)
                 ui.button('PROFIT', icon='percent', on_click=lambda: set_sort('profit_pct')).props('flat dense size=sm').classes(btn_class)
                 ui.button('VALUE', icon='attach_money', on_click=lambda: set_sort('total_value')).props('flat dense size=sm').classes(btn_class)
+
+        ui_refs['price_feed_warning'] = ui.label('').classes(
+            'text-[10px] md:text-xs font-bold text-[#FCD535] bg-[#FCD535]/10 border border-[#FCD535]/20 rounded-xl px-3 py-2'
+        )
+        ui_refs['price_feed_warning'].set_visibility(False)
+
+        def update_dashboard_meta_ui(view_data):
+            filtered_count = int(view_data.get('filtered_count', len(view_data.get('sorted_assets', []))))
+            group_value = str(view_data.get('current_group', 'ALL'))
+            ui_refs['filtered_count_badge'].set_text(f'{filtered_count} assets')
+            if filtered_count == 0 and group_value != 'ALL':
+                ui_refs['filtered_count_badge'].classes(
+                    remove='bg-white/5 text-gray-300 border-white/10',
+                    add='bg-[#FF453A]/10 text-[#FF9A92] border-[#FF453A]/25',
+                )
+            else:
+                ui_refs['filtered_count_badge'].classes(
+                    remove='bg-[#FF453A]/10 text-[#FF9A92] border-[#FF453A]/25',
+                    add='bg-white/5 text-gray-300 border-white/10',
+                )
+
+            warning_count = int(view_data.get('price_warning_count', 0) or 0)
+            warning_symbols = view_data.get('price_warning_symbols', []) or []
+            if warning_count > 0:
+                symbols_text = ', '.join(str(s) for s in warning_symbols)
+                suffix = f' ({symbols_text})' if symbols_text else ''
+                ui_refs['price_feed_warning'].set_text(
+                    f'Price feed delayed for {warning_count} symbols, using Avg Cost temporarily{suffix}'
+                )
+                ui_refs['price_feed_warning'].set_visibility(True)
+            else:
+                ui_refs['price_feed_warning'].set_visibility(False)
+
+        update_dashboard_meta_ui(d)
 
         # กล่องสำหรับใส่ตาราง
         table_container = ui.column().classes('w-full')
@@ -1501,6 +1584,15 @@ async def main_page(client):
                 elif sort_key == 'profit_pct': assets_to_show = sorted(assets_to_show, key=lambda x: x['profit_pct'], reverse=sort_desc)
                 elif sort_key == 'total_value': assets_to_show = sorted(assets_to_show, key=lambda x: x['shares'] * x['last_price'], reverse=sort_desc)
 
+            empty_state = None
+            if not assets_to_show and d.get('current_group') and d.get('current_group') != 'ALL':
+                active_group = str(d.get('current_group'))
+                empty_state = {
+                    'title': f'No holdings in {active_group} group.',
+                    'subtitle': 'This filter currently has no assets.',
+                    'cta': 'Change filter or edit asset group.',
+                }
+
             # ?? ส่ง ui_refs เข้าไปด้วย เพื่อผูกหน้าจอ
             create_portfolio_table(
                 assets_to_show,
@@ -1508,6 +1600,7 @@ async def main_page(client):
                 on_news=handle_news,
                 on_chart=handle_chart,
                 ui_refs=ui_refs,
+                empty_state=empty_state,
             )
             
         # สร้างกล่อง (เคลียร์ของเก่าทิ้งก่อนวาดใหม่เมื่อกดปุ่ม Sort)
@@ -1873,6 +1966,11 @@ async def main_page(client):
         
         d['sorted_assets'] = nd['sorted_assets']
         d['sidebar_pulse'] = nd.get('sidebar_pulse', {})
+        d['current_group'] = nd.get('current_group', d.get('current_group', 'ALL'))
+        d['filtered_count'] = nd.get('filtered_count', len(nd.get('sorted_assets', [])))
+        d['price_warning_count'] = nd.get('price_warning_count', 0)
+        d['price_warning_symbols'] = nd.get('price_warning_symbols', [])
+        update_dashboard_meta_ui(nd)
         refresh_trade_plan_panel(nd)
         refresh_health_score_panel(nd)
         
