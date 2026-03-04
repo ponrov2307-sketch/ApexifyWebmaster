@@ -856,59 +856,34 @@ async def main_page(client):
 
     # 🌟 จุดที่ 1: ปรับระยะขอบบนเป็น pt-[110px] เพื่อหลบแถบวิ่งให้สวยงาม
     with ui.column().classes('ax-page-shell w-full max-w-7xl mx-auto p-2 sm:p-4 md:p-8 gap-4 md:gap-6 pt-[110px] md:pt-[120px]'):
-        
-       # 💳 กล่องมูลค่าพอร์ต
-        with ui.row().classes('w-full justify-between items-center bg-gradient-to-br from-[#12161E] to-[#0B0E14] border border-white/5 p-6 md:p-10 rounded-[32px] shadow-[0_10px_40px_rgba(0,0,0,0.5)] relative overflow-hidden ax-hero-glow ax-neon-ring'):
-            ui.element('div').classes('absolute -top-32 -left-32 w-96 h-96 bg-[#D0FD3E]/10 rounded-full blur-[100px] pointer-events-none')
 
-            with ui.column().classes('gap-1 z-10 flex-1'):
-                with ui.row().classes('w-full justify-between items-center'):
-                    ui.label(d['t_port_val']).classes('text-[10px] md:text-xs text-gray-500 font-black tracking-[0.2em] uppercase')
-                    
-                    # 🌟 ปุ่มสลับค่าเงิน (THB / USD)
-                    def toggle_currency():
-                        current_curr = app.storage.user.get('currency', 'USD')
-                        app.storage.user['currency'] = 'THB' if current_curr == 'USD' else 'USD'
-                        ui.navigate.reload() # รีเฟรชหน้าเพื่อโหลดค่าเงินใหม่
-                        
-                    btn_text = 'SWITCH TO THB 🇹🇭' if d['curr_sym'] == '$' else 'SWITCH TO USD 🇺🇸'
-                    ui.button(btn_text, on_click=toggle_currency).props('flat dense').classes('text-[#D0FD3E] text-[10px] font-black tracking-widest bg-[#D0FD3E]/10 px-3 py-1 rounded-full hover:bg-[#D0FD3E]/20 transition-colors cursor-pointer')
+        async def change_portfolio_group(e):
+            app.storage.client['dashboard_group'] = e.value
+            await smart_update() # รันทันที ปลอดภัย 100%
 
-                with ui.row().classes('items-baseline gap-3 md:gap-4'):
-                    blink_class = 'blink-green' if d['is_profit_overall'] else 'blink-red'
-                    # 🌟 เติม tabular-nums เข้าไปตรงนี้
-                    ui_refs['net_worth'] = ui.label(f"{d['curr_sym']}{d['net_worth']:,.2f}").classes(f'tabular-nums text-5xl md:text-[80px] leading-none font-black text-white tracking-tight drop-shadow-lg {blink_class}')
-                
-                color_class = 'text-[#32D74B]' if d['is_profit_overall'] else 'text-[#FF453A]'
-                sign = "+" if d['is_profit_overall'] else "-"
-                pct = (abs(d['total_profit']) / d['total_invested'] * 100) if d['total_invested'] > 0 else 0
-                # 🌟 เติม tabular-nums เข้าไปตรงนี้ด้วย
-                ui_refs['total_profit'] = ui.label(f'{"▲" if d["is_profit_overall"] else "▼"} {d["curr_sym"]}{abs(d["total_profit"]):,.2f} ({sign}{pct:.2f}%)').classes(f'tabular-nums text-lg md:text-2xl font-black mt-2 {color_class} drop-shadow-md')
+        # 📦 แถวบน: Profile + VIP Command Center (การ์ดเล็กลง)
+        with ui.row().classes('w-full gap-3 md:gap-4 items-stretch flex-col lg:flex-row'):
+            with ui.column().classes('flex-1 bg-[#12161E]/80 backdrop-blur-xl p-4 md:p-5 rounded-[20px] border border-white/5 shadow-lg gap-2 transition-all hover:border-white/10 ax-card-hover'):
+                with ui.row().classes('items-center gap-3'):
+                    ui.icon('account_circle', size='lg').classes(d['role_color'])
+                    with ui.column().classes('gap-0'):
+                        ui.label(d['t_welcome']).classes('text-[10px] text-gray-500 font-bold uppercase tracking-wider')
+                        ui.label(d['username']).classes('text-base md:text-lg font-black text-white tracking-wide leading-tight')
+                        ui.label(f"{d['role']} MEMBER").classes(f'text-[9px] px-2 py-0.5 mt-1 rounded-full border border-[#D0FD3E]/30 bg-[#D0FD3E]/10 {d["role_color"]} font-black tracking-widest uppercase inline-block')
 
-        # 📦 กลุ่มการ์ด 3 ใบ (Profile, Group, VIP Command Center)
-        with ui.element('div').classes('ax-grid-3'):
-            with ui.row().classes('items-center bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] border border-white/5 shadow-lg gap-4 transition-all hover:border-white/10 ax-card-hover h-full'):
-                ui.icon('account_circle', size='xl').classes(d['role_color'])
-                with ui.column().classes('gap-0'):
-                    ui.label(d['t_welcome']).classes('text-[10px] text-gray-500 font-bold uppercase tracking-wider')
-                    ui.label(d['username']).classes('text-lg font-black text-white tracking-wide leading-tight')
-                    ui.label(f"{d['role']} MEMBER").classes(f'text-[9px] px-2 py-0.5 mt-1 rounded-full border border-[#D0FD3E]/30 bg-[#D0FD3E]/10 {d["role_color"]} font-black tracking-widest uppercase inline-block')
+                with ui.row().classes('w-full gap-2 flex-wrap'):
+                    ui.label(f"TELEGRAM: {str(telegram_id)[-6:] if telegram_id else 'N/A'}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
+                    ui.label(f"CURRENCY: {'THB' if d['curr_sym'] == '฿' else 'USD'}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
+                    ui.label(f"HOLDINGS: {len(d.get('sorted_assets', []))}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
+                    ui.label(f"STATUS: {d.get('status_txt', '-')[:24]}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-[#20D6A1]/10 text-[#20D6A1] border border-[#20D6A1]/25')
 
-            async def change_portfolio_group(e):
-                app.storage.client['dashboard_group'] = e.value
-                await smart_update() # รันทันที ปลอดภัย 100%
-
-            with ui.column().classes('justify-center bg-[#12161E]/80 backdrop-blur-xl p-5 md:p-6 rounded-[24px] border border-white/5 shadow-lg transition-all hover:border-white/10 ax-card-hover h-full'):
-                ui.label(d['t_curr_port']).classes('text-[10px] text-gray-500 font-black tracking-widest uppercase mb-2')
-                ui.select(['ALL', 'DCA', 'TRADING', 'DIV'], value=d['current_group'], on_change=change_portfolio_group).classes('w-full font-bold').props('outlined dark dense rounded behavior="menu"')
-
-            with ui.column().classes('justify-center bg-gradient-to-br from-[#161B22] to-[#0B0E14] p-5 md:p-6 rounded-[24px] border border-[#20D6A1]/20 shadow-lg relative overflow-hidden transition-all hover:border-[#39C8FF]/40 min-w-0 ax-neon-ring ax-card-hover h-full'):
+            with ui.column().classes('w-full lg:w-[420px] justify-center bg-gradient-to-br from-[#161B22] to-[#0B0E14] p-4 md:p-5 rounded-[20px] border border-[#20D6A1]/20 shadow-lg relative overflow-hidden transition-all hover:border-[#39C8FF]/40 min-w-0 ax-neon-ring ax-card-hover'):
                 ui.label('VIP COMMAND CENTER').classes('text-[10px] text-[#39C8FF] font-black tracking-widest uppercase mb-1 z-10')
                 membership_role = d.get('role', 'FREE')
                 days_left = d.get('days_left')
                 days_text = f'{days_left} DAYS LEFT' if isinstance(days_left, int) and days_left >= 0 else 'NO ACTIVE PACKAGE'
                 days_color = 'text-[#2FE8A8]' if isinstance(days_left, int) and days_left >= 0 else 'text-[#FFFF33]'
-                ui_refs['vip_days'] = ui.label(days_text).classes(f'text-xl md:text-2xl font-black {days_color}')
+                ui_refs['vip_days'] = ui.label(days_text).classes(f'text-lg md:text-xl font-black {days_color}')
                 ui_refs['vip_status'] = ui.label(f'{membership_role} MEMBER').classes('text-[10px] text-gray-400 font-black tracking-wider')
 
                 redeem_input = ui.input(placeholder='REDEEM CODE').props('dense outlined dark').classes('w-full mt-2')
@@ -1013,6 +988,31 @@ async def main_page(client):
                 # ปุ่มกด AI
                 ui.button('🤖 AI REBALANCE', on_click=run_ai_rebalance).classes('w-full md:w-auto bg-gradient-to-r from-purple-600 to-indigo-500 text-white font-black rounded-full px-6 py-3 shadow-[0_0_20px_rgba(147,51,234,0.4)] hover:scale-105 transition-transform text-sm')
 
+        # 💳 กล่องมูลค่าพอร์ต (ย้ายลงล่างตามคำขอ)
+        with ui.row().classes('w-full justify-between items-center bg-gradient-to-br from-[#12161E] to-[#0B0E14] border border-white/5 p-5 md:p-8 rounded-[28px] shadow-[0_10px_40px_rgba(0,0,0,0.5)] relative overflow-hidden ax-hero-glow ax-neon-ring'):
+            ui.element('div').classes('absolute -top-32 -left-32 w-96 h-96 bg-[#D0FD3E]/10 rounded-full blur-[100px] pointer-events-none')
+
+            with ui.column().classes('gap-1 z-10 flex-1'):
+                with ui.row().classes('w-full justify-between items-center'):
+                    ui.label(d['t_port_val']).classes('text-[10px] md:text-xs text-gray-500 font-black tracking-[0.2em] uppercase')
+
+                    def toggle_currency():
+                        current_curr = app.storage.user.get('currency', 'USD')
+                        app.storage.user['currency'] = 'THB' if current_curr == 'USD' else 'USD'
+                        ui.navigate.reload()
+
+                    btn_text = 'THB' if d['curr_sym'] == '$' else 'USD'
+                    ui.button(f'Currency: {btn_text}', on_click=toggle_currency).props('flat dense').classes('text-[#D0FD3E] text-[10px] font-black tracking-widest bg-[#D0FD3E]/10 px-3 py-1 rounded-full hover:bg-[#D0FD3E]/20 transition-colors cursor-pointer')
+
+                with ui.row().classes('items-baseline gap-3 md:gap-4'):
+                    blink_class = 'blink-green' if d['is_profit_overall'] else 'blink-red'
+                    ui_refs['net_worth'] = ui.label(f"{d['curr_sym']}{d['net_worth']:,.2f}").classes(f'tabular-nums text-4xl md:text-[62px] leading-none font-black text-white tracking-tight drop-shadow-lg {blink_class}')
+
+                color_class = 'text-[#32D74B]' if d['is_profit_overall'] else 'text-[#FF453A]'
+                sign = "+" if d['is_profit_overall'] else "-"
+                pct = (abs(d['total_profit']) / d['total_invested'] * 100) if d['total_invested'] > 0 else 0
+                ui_refs['total_profit'] = ui.label(f'{"▲" if d["is_profit_overall"] else "▼"} {d["curr_sym"]}{abs(d["total_profit"]):,.2f} ({sign}{pct:.2f}%)').classes(f'tabular-nums text-base md:text-xl font-black mt-2 {color_class} drop-shadow-md')
+
         def render_trade_plan_panel(panel_assets, role, curr_sym, curr_rate):
             is_pro_plan = str(role).upper() in ['PRO', 'VIP', 'ADMIN']
             holdings_count = len(panel_assets or [])
@@ -1108,9 +1108,12 @@ async def main_page(client):
                     next_data.get('curr_rate', 1.0),
                 )
 
-        with ui.row().classes('w-full justify-between items-center mt-6 mb-2 border-b border-white/5 pb-2'):
-            ui.label('YOUR HOLDINGS').classes('ax-section-title')
-            
+        with ui.row().classes('w-full justify-between items-center mt-6 mb-2 border-b border-white/5 pb-2 flex-wrap gap-2'):
+            with ui.row().classes('items-center gap-2'):
+                ui.label('YOUR HOLDINGS').classes('ax-section-title')
+                ui.label('Portfolio Filter').classes('text-[10px] text-gray-400 font-bold tracking-widest uppercase')
+                ui.select(['ALL', 'DCA', 'TRADING', 'DIV'], value=d['current_group'], on_change=change_portfolio_group).classes('w-28 text-xs').props('outlined dark dense behavior="menu"')
+
             with ui.row().classes('gap-2 bg-white/5 p-1 rounded-lg border border-white/10 shadow-inner'):
                 def set_sort(key):
                     if app.storage.client.get('sort_key') == key:
