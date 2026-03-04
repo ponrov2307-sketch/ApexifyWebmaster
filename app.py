@@ -2064,9 +2064,8 @@ async def sp500_page():
                         {'name': 'b_value', 'label': f'{b_ticker} Value ($)', 'field': 'b_value'},
                     ],
                     rows=sample_rows(data),
-                    row_key='date',
-                    pagination=30
-                ).classes('w-full ax-card').props('dense')
+                    row_key='date'
+                ).classes('w-full ax-card').props('dense rows-per-page-options=[15,30,50]')
 
         async def compare():
             symbol_a = str(ticker_a_input.value or '').strip().upper()
