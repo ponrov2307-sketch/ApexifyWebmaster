@@ -2465,6 +2465,66 @@ async def macro_page(client):
                     ui.label('✅ สภาวะเศรษฐกิจมหภาคอยู่ในเกณฑ์ปกติ ความเสี่ยงระบบ (Systemic Risk) ต่ำ สามารถถือรันเทรนด์ (Let Profit Run) หรือ DCA ได้ตามกลยุทธ์').classes('text-sm md:text-base text-white font-bold leading-relaxed')
 
 
+@ui.page('/gemini')
+@standard_page_frame
+async def gemini_page(client):
+    await client.connected()
+    tid = app.storage.user.get('telegram_id')
+    user_info = get_user_by_telegram(tid) if tid else {}
+    role = str(user_info.get('role', 'free')).lower()
+
+    with ui.column().classes('w-full max-w-4xl mx-auto p-4 md:p-8 gap-4 pt-[110px] md:pt-[120px]'):
+        with ui.card().classes('w-full bg-[#12161E]/70 border border-white/10 rounded-[24px] p-5 md:p-6'):
+            ui.label('GEMINI COPILOT').classes('text-2xl md:text-3xl font-black text-white tracking-widest')
+            ui.label('คุยกับ AI แบบต่อเนื่องหลายข้อความ').classes('text-sm text-gray-400')
+
+        history = ui.column().classes('w-full min-h-[380px] max-h-[60vh] overflow-y-auto gap-3 bg-[#0B1320]/80 border border-[#39C8FF]/20 rounded-[20px] p-4')
+        prompt_input = ui.textarea(placeholder='พิมพ์คำถามของคุณ...').props('outlined dark autogrow').classes('w-full')
+
+        state = {'sending': False}
+
+        async def send_prompt():
+            if state['sending']:
+                return
+            q = (prompt_input.value or '').strip()
+            if not q:
+                return
+
+            state['sending'] = True
+            prompt_input.value = ''
+            typing = None
+            with history:
+                ui.markdown(f'**You:** {q}').classes('text-sm text-white bg-white/5 rounded-xl p-3')
+                typing = ui.row().classes('items-center gap-2 text-xs text-gray-400')
+                with typing:
+                    ui.spinner(size='sm', color='#39C8FF')
+                    ui.label('Gemini is thinking...')
+
+            try:
+                from services.gemini_ai import generate_copilot_reply
+                resp = await run.io_bound(generate_copilot_reply, q, role)
+            except Exception as e:
+                resp = f'AI unavailable: {e}'
+            finally:
+                if typing is not None:
+                    try:
+                        typing.delete()
+                    except RuntimeError:
+                        pass
+
+            try:
+                with history:
+                    ui.markdown(f'**Gemini:** {resp}').classes('text-sm text-gray-100 bg-[#39C8FF]/10 border border-[#39C8FF]/20 rounded-xl p-3')
+            except RuntimeError:
+                pass
+            finally:
+                state['sending'] = False
+
+        with ui.row().classes('w-full gap-2'):
+            ui.button('Send', on_click=send_prompt, icon='send').classes('bg-[#20D6A1] text-black font-black rounded-xl px-5')
+            ui.button('Back Dashboard', on_click=lambda: ui.navigate.to('/')).props('flat').classes('text-gray-300')
+
+
 @ui.page('/healthz')
 def healthz():
     ui.label('ok')
