@@ -156,7 +156,7 @@ def render_apexify_copilot_fab(role: str):
 
                     with ui.row().classes('w-full gap-2'):
                         ui.button('Send', on_click=send_prompt, icon='send').classes('bg-[#20D6A1] text-black font-black rounded-xl px-4')
-                        ui.button('Open Gemini Page', on_click=lambda: (copilot_dialog.close(), ui.navigate.to('/analytics'))).props('flat').classes('text-gray-300')
+                        ui.button('Open Gemini Page', on_click=lambda: (copilot_dialog.close(), ui.navigate.to('/gemini'))).props('flat').classes('text-gray-300')
 
     with ui.element('div').classes('fixed bottom-5 right-5 z-[1200]'):
         btn_cls = 'bg-[#20D6A1] text-black hover:scale-105' if is_pro else 'bg-[#FCD535] text-black hover:scale-105'
