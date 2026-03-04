@@ -1744,17 +1744,26 @@ async def analytics_page(client):
                     ui.label('VALUE')
 
                 with ui.column().classes('w-full p-3 md:p-4 overflow-y-auto custom-scrollbar gap-2 flex-1'):
-                    for a in assets_data:
-                        with ui.row().classes('w-full justify-between items-center p-4 bg-white/5 hover:bg-[#1C2128] rounded-2xl transition-colors border border-transparent hover:border-white/10 group cursor-pointer'):
-                            with ui.column().classes('gap-0'):
-                                ui.label(a['ticker']).classes('font-black text-white tracking-wide text-lg md:text-xl')
-                                if mode == 'Sector Flow':
-                                    ui.label(a['sector']).classes('text-[9px] md:text-[10px] text-[#D0FD3E] font-bold uppercase bg-[#D0FD3E]/10 px-2 py-0.5 rounded mt-1')
-                            
-                            pct = (a['value'] / total_value) * 100 if total_value > 0 else 0
-                            with ui.row().classes('gap-3 md:gap-4 text-sm items-center'):
-                                ui.label(f"${a['value']:,.0f}").classes('text-gray-300 font-bold')
-                                ui.label(f"{pct:.1f}%").classes('text-[#32D74B] font-black w-14 text-right bg-[#32D74B]/10 py-1 rounded-md')
+                    if mode == 'Sector Flow':
+                        window_map = {'5D': '5d', '1M': '1mo', '3M': '3mo', '6M': '6mo'}
+                        rotation_data = await run.io_bound(get_real_sector_rotation, window_map.get(sector_window.value, '1mo'))
+                        for item in rotation_data:
+                            flow = float(item.get('flow_pct', 0))
+                            with ui.row().classes('w-full justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/10'):
+                                with ui.column().classes('gap-0'):
+                                    ui.label(f"{item.get('rank', 0)}. {item.get('sector', 'N/A')}").classes('font-black text-white tracking-wide text-base md:text-lg')
+                                    ui.label(item.get('symbol', '')).classes('text-[10px] text-gray-400 font-bold')
+                                ui.label(f"{flow:+.2f}%").classes('font-black text-sm px-3 py-1 rounded-md').style(f"background:{'#32D74B22' if flow >= 0 else '#FF453A22'}; color:{'#32D74B' if flow >= 0 else '#FF453A'};")
+                    else:
+                        for a in assets_data:
+                            with ui.row().classes('w-full justify-between items-center p-4 bg-white/5 hover:bg-[#1C2128] rounded-2xl transition-colors border border-transparent hover:border-white/10 group cursor-pointer'):
+                                with ui.column().classes('gap-0'):
+                                    ui.label(a['ticker']).classes('font-black text-white tracking-wide text-lg md:text-xl')
+                                
+                                pct = (a['value'] / total_value) * 100 if total_value > 0 else 0
+                                with ui.row().classes('gap-3 md:gap-4 text-sm items-center'):
+                                    ui.label(f"${a['value']:,.0f}").classes('text-gray-300 font-bold')
+                                    ui.label(f"{pct:.1f}%").classes('text-[#32D74B] font-black w-14 text-right bg-[#32D74B]/10 py-1 rounded-md')
 
         # ให้มันเรียกฟังก์ชันตรงๆ ไปเลย
         mode_toggle.on('update:model-value', update_view)
@@ -1783,112 +1792,141 @@ async def analytics_page(client):
 @standard_page_frame
 async def dividend_page():
     ui.query('body').style(f'background-color: {COLORS.get("bg", "#0D1117")}; font-family: "Inter", sans-serif;')
-    create_ticker() 
+    create_ticker()
 
     user_id = app.storage.user.get('user_id')
     raw_portfolio = await run.io_bound(get_portfolio, user_id) if user_id else []
 
     with ui.column().classes('w-full max-w-7xl mx-auto p-4 md:p-8 gap-6 pt-[110px] md:pt-[120px]'):
-        # Header หน้าปันผล
         with ui.row().classes('w-full justify-between items-end flex flex-col md:flex-row gap-2'):
             with ui.column().classes('gap-1'):
                 ui.label('DIVIDEND & DRIP SIMULATOR').classes('text-2xl md:text-3xl font-black text-white tracking-widest uppercase')
-                ui.label('จำลองการเติบโตของพอร์ตด้วยพลังของดอกเบี้ยทบต้น (Compound Interest)').classes('text-xs md:text-sm text-gray-400')
-        
-        tickers = [item['ticker'] for item in raw_portfolio]
-        real_div_data = await run.io_bound(get_real_dividend_data, tickers)
+                ui.label('เลือกได้ 2 โหมด: Quick DRIP (ง่าย) และ Real Backtest (ข้อมูลจริง)').classes('text-xs md:text-sm text-gray-400')
 
-        total_est_dividend = 0
-        total_value = 0
-        dividend_items = []
+        mode_tabs = ui.toggle(['Quick DRIP', 'Real Backtest'], value='Quick DRIP').classes('bg-[#12161E]/80 backdrop-blur-xl text-gray-400 rounded-full p-1 border border-white/5 shadow-lg font-bold').props('unelevated dark color=positive text-color=black')
 
-        for item in raw_portfolio:
-            ticker = item['ticker']
-            shares = float(item['shares'])
-            price = await run.io_bound(get_live_price, ticker)
-            val = shares * price
-            
-            div_info = real_div_data.get(ticker, {})
-            yield_pct = div_info.get('yield', 0)
-            amount_per_share = div_info.get('amount_per_share', 0)
-            est_amount = shares * amount_per_share
-            
-            total_value += val
-            total_est_dividend += est_amount
-            
-            if yield_pct > 0:
-                dividend_items.append({
-                    'ticker': ticker, 
-                    'yield': yield_pct, 
-                    'amount': est_amount,
-                    'ex_date': div_info.get('ex_date', 'N/A')
-                })
+        # Inputs
+        with ui.row().classes('w-full gap-3 flex-wrap'):
+            initial_input = ui.number('Initial Capital ($)', value=10000, min=0, step=100).props('outlined dense').classes('w-44')
+            monthly_input = ui.number('Monthly Contribution ($)', value=0, min=0, step=50).props('outlined dense').classes('w-48')
+            div_yield_input = ui.number('Dividend Yield %', value=3, min=0, step=0.1).props('outlined dense').classes('w-40')
+            growth_input = ui.number('Price Growth %', value=5, step=0.1).props('outlined dense').classes('w-40')
+            years_input = ui.select(options=[5, 10, 15, 20, 30, 50], value=10, label='Years').props('outlined dense').classes('w-28')
+            tax_input = ui.number('Tax %', value=0, min=0, max=100, step=0.1).props('outlined dense').classes('w-28')
+            ticker_input = ui.input('Ticker (Real Backtest)').props('outlined dense').classes('w-44').style('text-transform: uppercase;')
+            ticker_input.set_value('KO')
+            run_btn = ui.button('RUN SIMULATION', icon='play_arrow').classes('bg-[#20D6A1] text-black font-black rounded-xl px-5 py-3')
 
-        avg_yield = (total_est_dividend / total_value * 100) if total_value > 0 else 0
+        summary_row = ui.row().classes('w-full gap-4 flex-col md:flex-row')
+        chart_wrap = ui.column().classes('w-full')
+        table_wrap = ui.column().classes('w-full')
 
-        # DRIP Simulator Calculation
-        drip_10y_value = total_value * ((1 + (avg_yield/100)) ** 10)
-        drip_profit = drip_10y_value - total_value
+        def render_summary(initial_capital: float, final_value: float, profit: float):
+            summary_row.clear()
+            with summary_row:
+                for title, val, color in [
+                    ('INITIAL CAPITAL', initial_capital, '#ffffff'),
+                    ('FUTURE VALUE', final_value, '#20D6A1'),
+                    ('COMPOUND PROFIT', profit, '#D0FD3E' if profit >= 0 else '#FF5E6C'),
+                ]:
+                    with ui.column().classes('flex-1 bg-[#12161E]/80 backdrop-blur-xl p-5 rounded-[20px] border border-white/5'):
+                        ui.label(title).classes('text-[10px] text-gray-500 font-black tracking-widest uppercase')
+                        ui.label(f'${val:,.2f}').classes('text-2xl md:text-3xl font-black').style(f'color:{color};')
 
-        with ui.row().classes('w-full gap-6 items-stretch flex-col lg:flex-row'):
-            # ฝั่งซ้าย: การ์ดสรุปยอด
-            with ui.column().classes('flex-1 gap-6 w-full lg:w-auto'):
-                with ui.card().classes('w-full bg-[#12161E]/60 backdrop-blur-xl border border-[#32D74B]/30 p-6 md:p-8 rounded-[32px] shadow-[0_0_30px_rgba(50,215,75,0.15)] relative overflow-hidden transition-all hover:border-[#32D74B]/50 hover:-translate-y-1'):
-                    ui.element('div').classes('absolute -top-10 -right-10 w-32 h-32 bg-[#32D74B]/10 rounded-full blur-[40px] pointer-events-none')
-                    ui.label('ESTIMATED ANNUAL DIVIDEND').classes('text-gray-400 text-[10px] md:text-xs font-black tracking-widest uppercase')
-                    ui.label(f'${total_est_dividend:,.2f}').classes('text-4xl md:text-5xl font-black text-[#32D74B] mt-2 drop-shadow-md')
-                
-                with ui.card().classes('w-full bg-[#12161E]/60 backdrop-blur-xl border border-white/5 p-6 md:p-8 rounded-[32px] shadow-lg transition-all hover:border-white/10 hover:-translate-y-1'):
-                    ui.label('AVERAGE PORTFOLIO YIELD').classes('text-gray-500 text-[10px] md:text-xs font-black tracking-widest uppercase')
-                    ui.label(f'{avg_yield:.2f}%').classes('text-3xl md:text-4xl font-black text-white mt-2')
+        def render_chart(labels, series_a, series_b=None, name_a='Portfolio', name_b='Benchmark'):
+            chart_wrap.clear()
+            with chart_wrap:
+                with ui.card().classes('w-full bg-[#12161E]/60 backdrop-blur-xl border border-white/5 p-4 md:p-6 rounded-[26px] h-[360px] md:h-[460px] shadow-2xl'):
+                    series = [{'name': name_a, 'type': 'line', 'data': series_a, 'smooth': True, 'showSymbol': False, 'lineStyle': {'width': 3, 'color': '#20D6A1'}}]
+                    legend = [name_a]
+                    if series_b is not None:
+                        series.append({'name': name_b, 'type': 'line', 'data': series_b, 'smooth': True, 'showSymbol': False, 'lineStyle': {'width': 2, 'color': '#39C8FF', 'type': 'dashed'}})
+                        legend.append(name_b)
+                    ui.echart({
+                        'tooltip': {'trigger': 'axis', 'backgroundColor': '#12161E', 'textStyle': {'color': '#fff'}},
+                        'legend': {'data': legend, 'textStyle': {'color': '#8B949E'}},
+                        'grid': {'left': '6%', 'right': '6%', 'bottom': '8%', 'top': '14%', 'containLabel': True},
+                        'xAxis': {'type': 'category', 'data': labels, 'axisLine': {'lineStyle': {'color': '#8B949E'}}},
+                        'yAxis': {'type': 'value', 'axisLabel': {'formatter': '${value}'}, 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}},
+                        'series': series,
+                    }).classes('w-full h-full')
 
-            # ฝั่งขวา: กราฟ DRIP Simulation
-            with ui.card().classes('flex-[1.5] w-full lg:w-auto bg-gradient-to-br from-[#12161E]/90 to-[#0B0E14]/90 backdrop-blur-xl border border-[#D0FD3E]/30 p-6 md:p-8 rounded-[32px] shadow-[0_0_40px_rgba(208,253,62,0.1)] relative overflow-hidden transition-all hover:border-[#D0FD3E]/50'):
-                ui.icon('all_inclusive', size='120px').classes('absolute -right-6 -top-6 text-[#D0FD3E] opacity-[0.03]')
-                ui.label('DRIP SIMULATOR (10 YEARS PROJECTED)').classes('text-[#D0FD3E] text-[10px] md:text-xs font-black tracking-widest uppercase')
-                ui.label('จำลองการนำปันผลไปซื้อหุ้นทบต้นอัตโนมัติ').classes('text-xs text-gray-400 mt-1 mb-4')
-                
-                with ui.row().classes('w-full justify-between items-end'):
-                    with ui.column().classes('gap-0'):
-                        ui.label('PROJECTED PORTFOLIO VALUE').classes('text-gray-500 text-[10px] font-bold tracking-wider uppercase')
-                        ui.label(f'${drip_10y_value:,.2f}').classes('text-3xl md:text-4xl font-black text-white drop-shadow-md')
-                    with ui.column().classes('gap-0 items-end'):
-                        ui.label('COMPOUND PROFIT').classes('text-gray-500 text-[10px] font-bold tracking-wider uppercase')
-                        ui.label(f'+${drip_profit:,.2f}').classes('text-xl md:text-2xl font-black text-[#32D74B] drop-shadow-[0_0_10px_rgba(50,215,75,0.3)]')
-                
-                # วาดกราฟเส้นโค้งทบต้น (Gradient Area)
-                drip_curve = [total_value * ((1 + (avg_yield/100)) ** i) for i in range(11)]
-                ui.echart({
-                    'tooltip': {'trigger': 'axis', 'backgroundColor': '#12161E', 'borderColor': '#D0FD3E', 'textStyle': {'color': '#fff'}},
-                    'xAxis': {'type': 'category', 'show': False, 'data': [f"Year {i}" for i in range(11)]},
-                    'yAxis': {'type': 'value', 'show': False, 'min': 'dataMin'},
-                    'series': [{'data': drip_curve, 'type': 'line', 'smooth': True, 'showSymbol': False, 'lineStyle': {'color': '#D0FD3E', 'width': 4, 'shadowColor': '#D0FD3E', 'shadowBlur': 10}, 'areaStyle': {'color': """new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(208,253,62,0.3)'}, {offset: 1, color: 'rgba(208,253,62,0)'}])"""}}],
-                    'grid': {'left': -10, 'right': -10, 'top': 10, 'bottom': -10}
-                }).classes('w-full h-32 md:h-40 mt-6')
+        def render_table(columns, rows):
+            table_wrap.clear()
+            with table_wrap:
+                ui.table(columns=columns, rows=rows, row_key='year').classes('w-full ax-card').props('dense rows-per-page-options=[10,20,50]')
 
-        ui.label('UPCOMING PAYOUTS').classes('text-sm md:text-base font-black text-gray-400 mt-8 tracking-widest -mb-2')
-        
-        # ตารางรายการปันผล (Glassmorphism Table)
-        with ui.column().classes('w-full bg-[#12161E]/60 backdrop-blur-xl rounded-[32px] border border-white/5 overflow-hidden shadow-2xl gap-0'):
-            with ui.row().classes('w-full bg-[#0B0E14] p-5 md:p-6 border-b border-white/5 text-gray-500 text-[10px] md:text-xs font-bold uppercase tracking-widest items-center'):
-                ui.label('ASSET').classes('w-24 md:w-32 pl-2 md:pl-4')
-                ui.label('EX-DATE').classes('w-24 md:w-40 text-center')
-                ui.label('YIELD').classes('w-20 md:w-32 text-right hidden sm:block')
-                ui.label('EST. AMOUNT').classes('flex-1 text-right pr-2 md:pr-6')
-            
-            if not dividend_items:
-                with ui.column().classes('p-12 items-center justify-center w-full gap-2'):
-                    ui.icon('receipt_long', size='3xl').classes('text-gray-600')
-                    ui.label('ไม่มีหุ้นปันผลในพอร์ต').classes('text-gray-500 font-bold')
-            else:
-                for idx, item in enumerate(dividend_items):
-                    with ui.row().classes('w-full p-4 md:p-6 border-b border-white/5 items-center hover:bg-[#1C2128]/80 transition-colors text-sm group cursor-pointer'):
-                        with ui.row().classes('w-24 md:w-32 items-center gap-3 pl-2 md:pl-4'):
-                            ui.label(item['ticker']).classes('font-black text-white text-lg md:text-xl tracking-wide')
-                        
-                        ui.label(item['ex_date']).classes('w-24 md:w-40 text-[#D0FD3E] bg-[#D0FD3E]/10 px-2 py-1 rounded-md text-center font-bold text-xs')
-                        ui.label(f"{item['yield']:.2f}%").classes('w-20 md:w-32 text-right text-gray-400 font-bold hidden sm:block')
-                        ui.label(f"${item['amount']:,.2f}").classes('flex-1 text-right text-white font-black pr-2 md:pr-6 text-xl md:text-2xl drop-shadow-sm')
+        async def run_simulation(e=None):
+            mode = mode_tabs.value
+            initial = float(initial_input.value or 0)
+            years = int(years_input.value or 10)
+
+            if mode == 'Quick DRIP':
+                result = await run.io_bound(
+                    get_drip_projection,
+                    initial,
+                    float(monthly_input.value or 0),
+                    float(div_yield_input.value or 0),
+                    float(growth_input.value or 0),
+                    years,
+                    float(tax_input.value or 0),
+                )
+                summary = result['summary']
+                render_summary(summary['initial_capital'], summary['future_value'], summary['compound_profit'])
+                render_chart(result['labels'], result['values'], None, 'Quick DRIP')
+                render_table(
+                    [
+                        {'name': 'year', 'label': 'Year', 'field': 'year'},
+                        {'name': 'start_capital', 'label': 'Start', 'field': 'start_capital'},
+                        {'name': 'contribution', 'label': 'Contribution', 'field': 'contribution'},
+                        {'name': 'net_dividend', 'label': 'Net Dividend', 'field': 'net_dividend'},
+                        {'name': 'growth_gain', 'label': 'Growth Gain', 'field': 'growth_gain'},
+                        {'name': 'end_value', 'label': 'End Value', 'field': 'end_value'},
+                    ],
+                    result['rows'],
+                )
+                ui.notify(f"Assumptions: {result.get('assumptions', '-')}", type='info')
+                return
+
+            symbol = str(ticker_input.value or '').strip().upper()
+            if not symbol:
+                ui.notify('กรอก ticker สำหรับ Real Backtest', type='warning')
+                return
+
+            backtest = await run.io_bound(get_real_drip_backtest, symbol, years, initial if initial > 0 else 10000.0)
+            if not backtest:
+                summary_row.clear()
+                chart_wrap.clear()
+                table_wrap.clear()
+                with chart_wrap:
+                    with ui.column().classes('w-full ax-card p-8 items-center text-center gap-2'):
+                        ui.icon('warning', size='3rem').classes('text-[#FF5E6C]')
+                        ui.label('insufficient data').classes('text-lg font-black text-white')
+                        ui.label('ไม่สามารถโหลดข้อมูลจริงสำหรับ ticker/ช่วงเวลานี้').classes('text-sm text-gray-400')
+                return
+
+            s = backtest['summary']
+            render_summary(s['initial_capital'], s['final_drip'], s['final_drip'] - s['initial_capital'])
+            render_chart(backtest['labels'], backtest['drip_values'], backtest['price_only_values'], f"{symbol} DRIP", f"{symbol} Price Only")
+            render_table(
+                [
+                    {'name': 'year', 'label': 'Year', 'field': 'year'},
+                    {'name': 'price', 'label': 'Price', 'field': 'price'},
+                    {'name': 'price_only_value', 'label': 'Price Only', 'field': 'price_only_value'},
+                    {'name': 'drip_value', 'label': 'DRIP Value', 'field': 'drip_value'},
+                    {'name': 'dividend_ps', 'label': 'Dividend/Share', 'field': 'dividend_ps'},
+                    {'name': 'shares', 'label': 'Shares', 'field': 'shares'},
+                ],
+                backtest['rows'],
+            )
+            ui.notify(
+                f"Total {s['total_return_pct']:+.2f}% | Price {s['price_return_pct']:+.2f}% | Dividend {s['dividend_return_pct']:+.2f}%",
+                type='positive'
+            )
+
+        run_btn.on_click(run_simulation)
+        mode_tabs.on('update:model-value', run_simulation)
+        await run_simulation()
 # ==========================================
 # 5. หน้าแผนที่ความร้อน (PORTFOLIO HEATMAP) - Premium UI
 # ==========================================
