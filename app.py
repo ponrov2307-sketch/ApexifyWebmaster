@@ -12,7 +12,17 @@ from web.components.ticker import create_ticker
 from web.components.stats import create_stats_cards
 from web.components.table import create_portfolio_table, get_logo_url_for_ticker
 from web.components.charts import show_candlestick_chart
-from services.yahoo_finance import get_sparkline_data, get_live_price, update_global_cache_batch, get_real_dividend_data, get_portfolio_historical_growth, get_stock_duel_data
+from services.yahoo_finance import (
+    get_sparkline_data,
+    get_live_price,
+    update_global_cache_batch,
+    get_real_dividend_data,
+    get_portfolio_historical_growth,
+    get_stock_duel_data,
+    get_drip_projection,
+    get_real_drip_backtest,
+    get_real_sector_rotation,
+)
 from services.news_fetcher import fetch_stock_news_summary
 from services.gemini_ai import generate_apexify_report
 
@@ -1592,6 +1602,11 @@ async def analytics_page(client):
             mode_toggle = ui.toggle(['Allocation', 'Real Growth', 'Port Doctor', 'Sector Flow'], value='Allocation') \
                 .classes('bg-[#12161E]/80 backdrop-blur-xl text-gray-400 rounded-full p-1 border border-white/5 shadow-lg font-bold') \
                 .props('unelevated dark color=positive text-color=black')
+
+        with ui.row().classes('w-full justify-center gap-3 flex-wrap'):
+            growth_period = ui.select(options=['1M', '3M', '6M', '1Y', '3Y', '5Y'], value='1Y', label='Growth Range').props('outlined dense').classes('w-32')
+            growth_benchmark = ui.select(options=['SPY', 'QQQ'], value='SPY', label='Benchmark').props('outlined dense').classes('w-28')
+            sector_window = ui.select(options=['5D', '1M', '3M', '6M'], value='1M', label='Sector Window').props('outlined dense').classes('w-32')
         # 🌟 CHART & LIST AREA (แก้กราฟเบี้ยวด้วย w-full min-w-0)
         with ui.row().classes('w-full gap-6 mt-2 flex-col lg:flex-row items-stretch'):
             chart_card = ui.column().classes('flex- w-full min-w-0 bg-[#12161E]/60 backdrop-blur-xl border border-white/5 p-0 rounded-[32px] h-[500px] lg:h-[600px] relative overflow-hidden shadow-2xl')
@@ -1601,6 +1616,9 @@ async def analytics_page(client):
 
         async def update_view(e=None):
             mode = mode_toggle.value
+            growth_period.set_visibility(mode == 'Real Growth')
+            growth_benchmark.set_visibility(mode == 'Real Growth')
+            sector_window.set_visibility(mode == 'Sector Flow')
             chart_card.clear()
             list_card.clear()
             
@@ -1624,15 +1642,44 @@ async def analytics_page(client):
                         ui.label('TOTAL VALUE').classes('text-[10px] text-gray-500 font-bold uppercase tracking-widest')
 
                 elif mode == 'Real Growth':
-                    from services.yahoo_finance import get_portfolio_historical_growth
-                    growth_dates, growth_values = await run.io_bound(get_portfolio_historical_growth, raw_portfolio)
-                    ui.echart({
-                        'tooltip': {'trigger': 'axis', 'backgroundColor': '#12161E', 'borderColor': '#32D74B', 'textStyle': {'color': '#fff'}},
-                        'grid': {'left': '8%', 'right': '5%', 'bottom': '12%', 'top': '10%'},
-                        'xAxis': {'type': 'category', 'boundaryGap': False, 'data': growth_dates, 'axisLine': {'lineStyle': {'color': '#8B949E'}}},
-                        'yAxis': {'type': 'value', 'scale': True, 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}},
-                        'series': [{'data': growth_values, 'type': 'line', 'smooth': True, 'symbol': 'none', 'lineStyle': {'color': '#32D74B', 'width': 4, 'shadowColor': '#32D74B', 'shadowBlur': 10}, 'areaStyle': {'color': """new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(50,215,75,0.4)'}, {offset: 1, color: 'rgba(50,215,75,0)'}])"""}}]
-                    }).classes('w-full h-full p-4')
+                    period_map = {'1M': '1mo', '3M': '3mo', '6M': '6mo', '1Y': '1y', '3Y': '3y', '5Y': '5y'}
+                    growth = await run.io_bound(
+                        get_portfolio_historical_growth,
+                        raw_portfolio,
+                        period_map.get(growth_period.value, '1y'),
+                        '1d',
+                        growth_benchmark.value or 'SPY',
+                    )
+                    labels = growth.get('labels', [])
+                    p_values = growth.get('portfolio_values', [])
+                    b_values = growth.get('benchmark_values', [])
+                    p_metrics = growth.get('portfolio_metrics', {})
+                    b_metrics = growth.get('benchmark_metrics', {})
+                    updated_at = str(growth.get('updated_at', '')).replace('T', ' ')[:19]
+                    bench_name = growth.get('benchmark_ticker', growth_benchmark.value or 'SPY')
+
+                    if not labels or not p_values:
+                        with ui.column().classes('absolute-center items-center gap-3'):
+                            ui.icon('query_stats', size='4xl').classes('text-gray-600')
+                            ui.label('Insufficient data for growth analysis').classes('text-gray-400 font-bold')
+                    else:
+                        with ui.row().classes('w-full gap-2 absolute top-3 left-3 z-20 flex-wrap'):
+                            ui.label(f"Return {p_metrics.get('return_pct', 0):+.2f}%").classes('text-[10px] font-black px-2 py-1 rounded-full bg-[#20D6A1]/15 text-[#20D6A1] border border-[#20D6A1]/30')
+                            ui.label(f"MDD {p_metrics.get('max_drawdown_pct', 0):.2f}%").classes('text-[10px] font-black px-2 py-1 rounded-full bg-white/10 text-white border border-white/20')
+                            ui.label(f"Vol {p_metrics.get('volatility_annual_pct', 0):.2f}%").classes('text-[10px] font-black px-2 py-1 rounded-full bg-[#39C8FF]/15 text-[#39C8FF] border border-[#39C8FF]/30')
+                            ui.label(f"Source: Yahoo • {updated_at}").classes('text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10')
+
+                        ui.echart({
+                            'tooltip': {'trigger': 'axis', 'backgroundColor': '#12161E', 'textStyle': {'color': '#fff'}},
+                            'legend': {'data': ['Portfolio', bench_name], 'top': 8, 'textStyle': {'color': '#8B949E'}},
+                            'grid': {'left': '8%', 'right': '5%', 'bottom': '12%', 'top': '18%'},
+                            'xAxis': {'type': 'category', 'boundaryGap': False, 'data': labels, 'axisLine': {'lineStyle': {'color': '#8B949E'}}},
+                            'yAxis': {'type': 'value', 'scale': True, 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}},
+                            'series': [
+                                {'name': 'Portfolio', 'data': p_values, 'type': 'line', 'smooth': True, 'symbol': 'none', 'lineStyle': {'color': '#32D74B', 'width': 3}},
+                                {'name': bench_name, 'data': b_values, 'type': 'line', 'smooth': True, 'symbol': 'none', 'lineStyle': {'color': '#39C8FF', 'width': 2, 'type': 'dashed'}},
+                            ]
+                        }).classes('w-full h-full p-4')
 
                 elif mode == 'Port Doctor':
                     with ui.column().classes('w-full h-full p-6 md:p-8 items-center justify-center relative'):
@@ -1669,22 +1716,27 @@ async def analytics_page(client):
                         btn_ai = ui.button('เริ่มสแกนสุขภาพพอร์ต', icon='vaccines', on_click=generate_doctor).classes('mt-8 bg-[#1C2128] border border-[#32D74B]/50 text-[#32D74B] font-black py-4 px-10 rounded-full shadow-[0_0_30px_rgba(50,215,75,0.2)] hover:bg-[#32D74B] hover:text-black transition-all text-lg')
                 
                 elif mode == 'Sector Flow':
-                    ui.label('REAL SECTOR FUND FLOW (5 DAYS)').classes('text-lg font-black text-white tracking-widest absolute top-6 left-6 md:left-8 z-10')
-                    
-                    # 🌟 ดึงข้อมูลกระแสเงินไหลเข้า ETF จริงๆ
-                    from services.yahoo_finance import get_real_sector_rotation
-                    rotation_data = await run.io_bound(get_real_sector_rotation)
-                    
-                    s_names = [item['sector'] for item in rotation_data]
-                    s_values = [item['flow_pct'] for item in rotation_data]
-                    
-                    ui.echart({
-                        'tooltip': {'trigger': 'axis', 'axisPointer': {'type': 'shadow'}, 'backgroundColor': '#12161E', 'valueFormatter': "(value) => value + '%'"},
-                        'grid': {'left': '25%', 'right': '10%', 'bottom': '10%', 'top': '20%'},
-                        'xAxis': {'type': 'value', 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}},
-                        'yAxis': {'type': 'category', 'data': s_names, 'axisLine': {'show': False}, 'axisLabel': {'color': '#fff', 'fontWeight': 'bold'}},
-                        'series': [{'name': 'Flow (%)', 'type': 'bar', 'data': [{'value': v, 'itemStyle': {'color': '#32D74B' if v >= 0 else '#FF453A', 'borderRadius': 5}} for v in s_values]}]
-                    }).classes('w-full h-full p-4 mt-6')
+                    window_map = {'5D': '5d', '1M': '1mo', '3M': '3mo', '6M': '6mo'}
+                    rotation_data = await run.io_bound(get_real_sector_rotation, window_map.get(sector_window.value, '1mo'))
+                    ui.label(f'REAL SECTOR FLOW ({sector_window.value})').classes('text-lg font-black text-white tracking-widest absolute top-6 left-6 md:left-8 z-10')
+
+                    if not rotation_data:
+                        with ui.column().classes('absolute-center items-center gap-3'):
+                            ui.icon('stacked_bar_chart', size='4xl').classes('text-gray-600')
+                            ui.label('Insufficient data for sector flow').classes('text-gray-400 font-bold')
+                    else:
+                        s_names = [f"{item.get('rank', 0)}. {item['sector']}" for item in rotation_data]
+                        s_values = [item['flow_pct'] for item in rotation_data]
+                        updated_at = str(rotation_data[0].get('updated_at', '')).replace('T', ' ')[:19]
+                        ui.label(f'Data Source: Yahoo Finance • Updated: {updated_at}').classes('absolute top-14 left-6 text-[10px] text-gray-400 z-10')
+
+                        ui.echart({
+                            'tooltip': {'trigger': 'axis', 'axisPointer': {'type': 'shadow'}, 'backgroundColor': '#12161E', 'valueFormatter': "(value) => value + '%'"},
+                            'grid': {'left': '34%', 'right': '8%', 'bottom': '8%', 'top': '20%'},
+                            'xAxis': {'type': 'value', 'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}}},
+                            'yAxis': {'type': 'category', 'data': s_names, 'axisLine': {'show': False}, 'axisLabel': {'color': '#fff', 'fontWeight': 'bold'}},
+                            'series': [{'name': 'Return (%)', 'type': 'bar', 'data': [{'value': v, 'itemStyle': {'color': '#32D74B' if v >= 0 else '#FF453A', 'borderRadius': 5}} for v in s_values]}]
+                        }).classes('w-full h-full p-4 mt-6')
 
             with list_card:
                 with ui.row().classes('w-full bg-[#0B0E14] p-5 md:p-6 border-b border-white/5 text-xs text-gray-500 font-bold tracking-widest justify-between shrink-0'):
@@ -1706,6 +1758,9 @@ async def analytics_page(client):
 
         # ให้มันเรียกฟังก์ชันตรงๆ ไปเลย
         mode_toggle.on('update:model-value', update_view)
+        growth_period.on('update:model-value', update_view)
+        growth_benchmark.on('update:model-value', update_view)
+        sector_window.on('update:model-value', update_view)
         
         async def set_group(g):
             current_group['val'] = g

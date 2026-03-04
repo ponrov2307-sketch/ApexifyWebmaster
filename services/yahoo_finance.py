@@ -234,31 +234,140 @@ def get_real_dividend_data(tickers: list):
         print(f"Dividend API Error: {e}")
     return dividend_items
 
-def get_portfolio_historical_growth(portfolio_items: list):
-    if not portfolio_items: return ['Mon'], [0]
-    tickers = [item['ticker'] for item in portfolio_items]
+def _extract_close_series(download_df, ticker: str):
+    if download_df is None or download_df.empty:
+        return pd.Series(dtype=float)
     try:
-        data = yf.download(tickers, period="1mo", interval="1d", progress=False)
-        if data.empty: return ['Mon'], [0]
-        
-        dates = data.index.strftime('%b %d').tolist()
-        total_values = [0] * len(dates)
-        
+        close_data = download_df['Close']
+        if isinstance(close_data, pd.DataFrame):
+            if ticker in close_data.columns:
+                return close_data[ticker].dropna()
+            return close_data.iloc[:, 0].dropna()
+        return close_data.dropna()
+    except Exception:
+        return pd.Series(dtype=float)
+
+
+def _compute_return_metrics(values: pd.Series):
+    if values is None or values.empty or len(values) < 2:
+        return {'return_pct': 0.0, 'max_drawdown_pct': 0.0, 'volatility_annual_pct': 0.0}
+
+    base = float(values.iloc[0]) if float(values.iloc[0]) != 0 else 1.0
+    total_return = ((float(values.iloc[-1]) / base) - 1) * 100
+
+    peak = values.cummax()
+    drawdown = ((values - peak) / peak) * 100
+    max_drawdown = float(drawdown.min()) if not drawdown.empty else 0.0
+
+    daily = values.pct_change().dropna()
+    volatility = float(daily.std() * (252 ** 0.5) * 100) if not daily.empty else 0.0
+
+    return {
+        'return_pct': round(total_return, 2),
+        'max_drawdown_pct': round(max_drawdown, 2),
+        'volatility_annual_pct': round(volatility, 2),
+    }
+
+
+def get_portfolio_historical_growth(portfolio_items: list, period: str = "1y", interval: str = "1d", benchmark: str = "SPY"):
+    if not portfolio_items:
+        return {
+            'labels': [],
+            'portfolio_values': [],
+            'benchmark_values': [],
+            'benchmark_ticker': benchmark,
+            'portfolio_metrics': _compute_return_metrics(pd.Series(dtype=float)),
+            'benchmark_metrics': _compute_return_metrics(pd.Series(dtype=float)),
+            'updated_at': datetime.now(UTC).isoformat(),
+        }
+
+    tickers = [str(item.get('ticker', '')).strip().upper() for item in portfolio_items if item.get('ticker')]
+    tickers = [t for t in tickers if t]
+    if not tickers:
+        return {
+            'labels': [],
+            'portfolio_values': [],
+            'benchmark_values': [],
+            'benchmark_ticker': benchmark,
+            'portfolio_metrics': _compute_return_metrics(pd.Series(dtype=float)),
+            'benchmark_metrics': _compute_return_metrics(pd.Series(dtype=float)),
+            'updated_at': datetime.now(UTC).isoformat(),
+        }
+
+    try:
+        data = yf.download(tickers, period=period, interval=interval, progress=False, auto_adjust=True)
+        if data.empty:
+            return {
+                'labels': [],
+                'portfolio_values': [],
+                'benchmark_values': [],
+                'benchmark_ticker': benchmark,
+                'portfolio_metrics': _compute_return_metrics(pd.Series(dtype=float)),
+                'benchmark_metrics': _compute_return_metrics(pd.Series(dtype=float)),
+                'updated_at': datetime.now(UTC).isoformat(),
+            }
+
+        portfolio_df = pd.DataFrame(index=data.index)
+        portfolio_df['portfolio_value'] = 0.0
+
         for item in portfolio_items:
-            t = item['ticker']
-            shares = item['shares']
-            if len(tickers) > 1 and isinstance(data.columns, pd.MultiIndex):
-                series = data['Close'][t].ffill().fillna(0).tolist()
-            else:
-                series = data['Close'].ffill().fillna(0).tolist()
-            
-            for i, val in enumerate(series):
-                if i < len(total_values):
-                    total_values[i] += float(val) * shares
-                    
-        return dates, total_values
-    except:
-        return ['Mon'], [0]
+            t = str(item.get('ticker', '')).strip().upper()
+            if not t:
+                continue
+            shares = float(item.get('shares', 0) or 0)
+            close_series = _extract_close_series(data, t).reindex(data.index).ffill().fillna(0.0)
+            portfolio_df['portfolio_value'] += close_series * shares
+
+        benchmark_df = yf.download(str(benchmark).upper(), period=period, interval=interval, progress=False, auto_adjust=True)
+        bench_close = _extract_close_series(benchmark_df, str(benchmark).upper()).reindex(portfolio_df.index).ffill()
+
+        merged = pd.DataFrame(index=portfolio_df.index)
+        merged['portfolio_value'] = portfolio_df['portfolio_value']
+        merged = merged[merged['portfolio_value'] > 0]
+        if not bench_close.empty:
+            merged['bench_close'] = bench_close
+            merged = merged.dropna()
+
+        if merged.empty:
+            return {
+                'labels': [],
+                'portfolio_values': [],
+                'benchmark_values': [],
+                'benchmark_ticker': benchmark,
+                'portfolio_metrics': _compute_return_metrics(pd.Series(dtype=float)),
+                'benchmark_metrics': _compute_return_metrics(pd.Series(dtype=float)),
+                'updated_at': datetime.now(UTC).isoformat(),
+            }
+
+        portfolio_values = merged['portfolio_value']
+        base_portfolio = float(portfolio_values.iloc[0]) if float(portfolio_values.iloc[0]) != 0 else 1.0
+
+        benchmark_values = []
+        benchmark_metrics = _compute_return_metrics(pd.Series(dtype=float))
+        if 'bench_close' in merged.columns:
+            bench_norm = (merged['bench_close'] / float(merged['bench_close'].iloc[0])) * base_portfolio
+            benchmark_values = [round(float(v), 2) for v in bench_norm.tolist()]
+            benchmark_metrics = _compute_return_metrics(bench_norm)
+
+        return {
+            'labels': merged.index.strftime('%Y-%m-%d').tolist(),
+            'portfolio_values': [round(float(v), 2) for v in portfolio_values.tolist()],
+            'benchmark_values': benchmark_values,
+            'benchmark_ticker': str(benchmark).upper(),
+            'portfolio_metrics': _compute_return_metrics(portfolio_values),
+            'benchmark_metrics': benchmark_metrics,
+            'updated_at': datetime.now(UTC).isoformat(),
+        }
+    except Exception:
+        return {
+            'labels': [],
+            'portfolio_values': [],
+            'benchmark_values': [],
+            'benchmark_ticker': benchmark,
+            'portfolio_metrics': _compute_return_metrics(pd.Series(dtype=float)),
+            'benchmark_metrics': _compute_return_metrics(pd.Series(dtype=float)),
+            'updated_at': datetime.now(UTC).isoformat(),
+        }
 
 def get_advanced_stock_info(tickers: list):
     """ดึงข้อมูล Sector และ Target Price ของจริงจาก Yahoo Finance"""
@@ -380,3 +489,196 @@ def get_real_sector_rotation():
         except: continue
     rotation.sort(key=lambda x: x['flow_pct'], reverse=True)
     return rotation
+
+
+# ---------- v2 data services for DRIP / Growth / Sector Flow ----------
+def get_drip_projection(
+    initial_capital: float = 10000.0,
+    monthly_contribution: float = 0.0,
+    dividend_yield_pct: float = 3.0,
+    price_growth_pct: float = 5.0,
+    years: int = 10,
+    tax_rate_pct: float = 0.0,
+):
+    initial = max(float(initial_capital or 0), 0.0)
+    monthly = max(float(monthly_contribution or 0), 0.0)
+    div_yield = max(float(dividend_yield_pct or 0), 0.0)
+    growth = float(price_growth_pct or 0)
+    years = max(int(years or 1), 1)
+    tax_rate = min(max(float(tax_rate_pct or 0), 0.0), 100.0)
+
+    value = initial
+    rows = []
+    labels = []
+    values = []
+    dividend_after_tax_total = 0.0
+
+    for year in range(1, years + 1):
+        start_capital = value
+        yearly_contribution = monthly * 12
+        value += yearly_contribution
+
+        gross_dividend = value * (div_yield / 100.0)
+        net_dividend = gross_dividend * (1 - tax_rate / 100.0)
+        value += net_dividend
+        dividend_after_tax_total += net_dividend
+
+        growth_gain = value * (growth / 100.0)
+        value += growth_gain
+
+        labels.append(f'Year {year}')
+        values.append(round(value, 2))
+        rows.append({
+            'year': year,
+            'start_capital': round(start_capital, 2),
+            'contribution': round(yearly_contribution, 2),
+            'net_dividend': round(net_dividend, 2),
+            'growth_gain': round(growth_gain, 2),
+            'end_value': round(value, 2),
+        })
+
+    invested_capital = initial + (monthly * 12 * years)
+    return {
+        'labels': labels,
+        'values': values,
+        'rows': rows,
+        'summary': {
+            'initial_capital': round(initial, 2),
+            'invested_capital': round(invested_capital, 2),
+            'future_value': round(value, 2),
+            'compound_profit': round(value - invested_capital, 2),
+            'dividend_contribution': round(dividend_after_tax_total, 2),
+        },
+        'assumptions': f'Annual dividend {div_yield:.2f}%, price growth {growth:.2f}%, tax {tax_rate:.2f}%',
+    }
+
+
+def get_real_drip_backtest(ticker: str, years: int = 10, initial_capital: float = 10000.0):
+    symbol = str(ticker or '').strip().upper()
+    years = max(int(years or 1), 1)
+    initial = max(float(initial_capital or 0), 0.0)
+    if not symbol or initial <= 0:
+        return None
+
+    try:
+        period = 'max' if years >= 50 else f'{years}y'
+        hist = yf.Ticker(symbol).history(period=period, interval='1mo', auto_adjust=False)
+        if hist.empty or len(hist) < 2:
+            return None
+        hist = hist.dropna(subset=['Close'])
+        cutoff = pd.Timestamp(datetime.now()) - pd.DateOffset(years=years)
+        hist = hist[hist.index >= cutoff]
+        if hist.empty:
+            return None
+
+        close = hist['Close'].astype(float)
+        div = hist['Dividends'].astype(float) if 'Dividends' in hist.columns else pd.Series(0.0, index=hist.index)
+
+        base_price = float(close.iloc[0])
+        if base_price <= 0:
+            return None
+
+        shares_price_only = initial / base_price
+        shares_total = initial / base_price
+        yearly = {}
+
+        for idx in hist.index:
+            d = float(div.loc[idx]) if idx in div.index else 0.0
+            p = float(close.loc[idx])
+            if d > 0 and p > 0:
+                shares_total += (shares_total * d) / p
+
+            y = idx.year
+            yearly[y] = {
+                'price': p,
+                'price_only_value': shares_price_only * p,
+                'drip_value': shares_total * p,
+                'dividend_ps': d,
+                'shares_total': shares_total,
+            }
+
+        rows = []
+        labels = []
+        price_series = []
+        drip_series = []
+        for y in sorted(yearly.keys()):
+            row = yearly[y]
+            labels.append(str(y))
+            price_series.append(round(float(row['price_only_value']), 2))
+            drip_series.append(round(float(row['drip_value']), 2))
+            rows.append({
+                'year': y,
+                'price': round(float(row['price']), 2),
+                'price_only_value': round(float(row['price_only_value']), 2),
+                'drip_value': round(float(row['drip_value']), 2),
+                'dividend_ps': round(float(row['dividend_ps']), 4),
+                'shares': round(float(row['shares_total']), 6),
+            })
+
+        if not rows:
+            return None
+
+        final_price_only = float(rows[-1]['price_only_value'])
+        final_drip = float(rows[-1]['drip_value'])
+        total_return = ((final_drip / initial) - 1) * 100
+        price_return = ((final_price_only / initial) - 1) * 100
+        dividend_return = total_return - price_return
+
+        return {
+            'ticker': symbol,
+            'labels': labels,
+            'price_only_values': price_series,
+            'drip_values': drip_series,
+            'rows': rows,
+            'summary': {
+                'initial_capital': round(initial, 2),
+                'final_price_only': round(final_price_only, 2),
+                'final_drip': round(final_drip, 2),
+                'price_return_pct': round(price_return, 2),
+                'dividend_return_pct': round(dividend_return, 2),
+                'total_return_pct': round(total_return, 2),
+            },
+            'updated_at': datetime.now(UTC).isoformat(),
+        }
+    except Exception:
+        return None
+
+
+def get_real_sector_rotation(window: str = '1mo', sector_map=None):
+    sectors = sector_map or {
+        'Technology': 'XLK',
+        'Healthcare': 'XLV',
+        'Financials': 'XLF',
+        'Energy': 'XLE',
+        'Consumer Discretionary': 'XLY',
+        'Consumer Staples': 'XLP',
+        'Industrials': 'XLI',
+        'Utilities': 'XLU',
+        'Real Estate': 'XLRE',
+        'Materials': 'XLB',
+        'Communication': 'XLC',
+    }
+    result = []
+    for name, sym in sectors.items():
+        try:
+            hist = yf.Ticker(sym).history(period=window, interval='1d', auto_adjust=True)
+            if hist.empty or len(hist) < 2:
+                continue
+            close = hist['Close'].dropna()
+            if len(close) < 2:
+                continue
+            flow_pct = ((float(close.iloc[-1]) - float(close.iloc[0])) / float(close.iloc[0])) * 100
+            result.append({
+                'sector': name,
+                'symbol': sym,
+                'flow_pct': round(flow_pct, 2),
+                'sparkline': [round(float(v), 2) for v in close.tail(20).tolist()],
+                'updated_at': datetime.now(UTC).isoformat(),
+            })
+        except Exception:
+            continue
+
+    result.sort(key=lambda x: x['flow_pct'], reverse=True)
+    for i, item in enumerate(result, start=1):
+        item['rank'] = i
+    return result
