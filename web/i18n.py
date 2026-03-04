@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from typing import Any, Callable
@@ -292,76 +292,66 @@ def tr(key: str, lang: str | None = "TH", **kwargs: Any) -> str:
 def _mojibake_score(text: str) -> int:
     if not isinstance(text, str):
         return 0
-
-    controls = sum(1 for ch in text if "\u0080" <= ch <= "\u009f")
-    score = controls * 6
-    score += text.count("เธ") * 4
-    score += text.count("โ€") * 5
-    score += text.count("ย€") * 5
-    score += text.count("??") * 2
-
-    # Count "เน" as suspicious only when paired with obvious mojibake markers.
-    if "เธ" in text or "โ€" in text or "ย€" in text:
-        score += text.count("เน") * 2
-
+    score = 0
+    score += sum(1 for ch in text if "\u0080" <= ch <= "\u009f") * 8
+    score += text.count("\ufffd") * 10
+    token_weights: tuple[tuple[str, int], ...] = (
+        ("??", 4),
+        ("??", 2),
+        ("??", 6),
+        ("??", 6),
+        ("?????", 5),
+        ("??????", 6),
+        ("??????", 6),
+        ("?", 4),
+        ("?", 3),
+        ("??", 2),
+    )
+    for token, weight in token_weights:
+        score += text.count(token) * weight
+    if re.search(r"(?:??|??){3,}", text):
+        score += 10
+    if "??" in text and any(token in text for token in ("??", "??", "??", "??", "?", "?", "\ufffd")):
+        score += 8
     return score
-
-
-def _looks_mojibake(text: str) -> bool:
-    if not isinstance(text, str) or not text:
-        return False
-
-    if any("\u0080" <= ch <= "\u009f" for ch in text):
-        return True
-    if any(token in text for token in ("โ€", "ย€")):
-        return True
-    if text.count("เธ") >= 2:
-        return True
-    if text.count("เธ") >= 1 and text.count("เน") >= 1:
-        return True
-    if "??" in text and ("เธ" in text or "เน" in text):
-        return True
-
-    return False
-
-
-def _decode_once(value: str, source_encoding: str) -> str:
+def _decode_candidate(value: str, source_encoding: str, errors: str) -> str | None:
     try:
-        raw = value.encode(source_encoding)
-        return raw.decode("utf-8")
+        raw = value.encode(source_encoding, errors=errors)
+        return raw.decode("utf-8", errors=errors)
     except Exception:
-        return value
-
-
+        return None
 def _repair_mojibake(text: str) -> str:
     repaired = str(text)
-
-    for _ in range(3):
-        if not _looks_mojibake(repaired):
-            break
-
+    if not repaired:
+        return repaired
+    for _ in range(4):
         baseline = _mojibake_score(repaired)
         best_value = repaired
         best_score = baseline
-
         for source_encoding in ("cp874", "latin-1", "cp1252"):
-            candidate = _decode_once(repaired, source_encoding)
-            candidate_score = _mojibake_score(candidate)
-            if candidate_score < best_score:
-                best_value = candidate
-                best_score = candidate_score
-
+            for mode in ("strict", "ignore", "replace"):
+                candidate = _decode_candidate(repaired, source_encoding, mode)
+                if not candidate or candidate == repaired:
+                    continue
+                candidate = candidate.replace("?????????", "?")
+                candidate = candidate.replace("???\u0002", "?")
+                candidate = re.sub(r"\s{2,}", " ", candidate).strip()
+                candidate_score = _mojibake_score(candidate)
+                if candidate_score < best_score or (
+                    candidate_score == best_score and len(candidate) > len(best_value)
+                ):
+                    best_value = candidate
+                    best_score = candidate_score
         if best_value == repaired:
             break
         repaired = best_value
-
-    repaired = repaired.replace("โ€ข", "•")
-    repaired = repaired.replace("โ\u0002", "•")
-    repaired = repaired.replace("??", "")
+    repaired = repaired.replace("?????????", "?")
+    repaired = repaired.replace("???\u0002", "?")
+    # Remove "??" only when the text still looks like mojibake.
+    if "??" in repaired and _mojibake_score(repaired) >= 8:
+        repaired = repaired.replace("??", "")
     repaired = re.sub(r"\s{2,}", " ", repaired)
     return repaired.strip()
-
-
 def translate_text(text: str, lang: str | None = "TH") -> str:
     if not isinstance(text, str):
         return text
@@ -384,18 +374,30 @@ def translate_text(text: str, lang: str | None = "TH") -> str:
 def install_ui_text_i18n(ui_obj: Any, lang_getter: Callable[[], str]) -> None:
     if getattr(ui_obj, "_apx_i18n_installed", False):
         return
-
     def _current_lang() -> str:
         try:
             return normalize_lang(lang_getter())
         except Exception:
             return "TH"
-
     def _translate(value: Any) -> Any:
         if isinstance(value, str):
             return translate_text(value, _current_lang())
         return value
-
+    def _patch_runtime_text_methods(component: Any) -> Any:
+        if component is None:
+            return component
+        if getattr(component, "_apx_i18n_component_patched", False):
+            return component
+        def _wrap_method(method: Callable[..., Any]) -> Callable[..., Any]:
+            def _wrapped(value: Any = "", *args: Any, **kwargs: Any) -> Any:
+                return method(_translate(value), *args, **kwargs)
+            return _wrapped
+        for method_name in ("set_text", "set_content"):
+            original_method = getattr(component, method_name, None)
+            if callable(original_method):
+                setattr(component, method_name, _wrap_method(original_method))
+        setattr(component, "_apx_i18n_component_patched", True)
+        return component
     original_label = ui_obj.label
     original_button = ui_obj.button
     original_notify = ui_obj.notify
@@ -404,24 +406,23 @@ def install_ui_text_i18n(ui_obj: Any, lang_getter: Callable[[], str]) -> None:
     original_textarea = ui_obj.textarea
     original_select = ui_obj.select
     original_toggle = getattr(ui_obj, "toggle", None)
-
     def label(text: Any = "", *args: Any, **kwargs: Any) -> Any:
-        return original_label(_translate(text), *args, **kwargs)
-
+        component = original_label(_translate(text), *args, **kwargs)
+        return _patch_runtime_text_methods(component)
     def button(*args: Any, **kwargs: Any) -> Any:
         mutable_args = list(args)
         if mutable_args and isinstance(mutable_args[0], str):
             mutable_args[0] = _translate(mutable_args[0])
         if isinstance(kwargs.get("text"), str):
             kwargs["text"] = _translate(kwargs["text"])
-        return original_button(*mutable_args, **kwargs)
-
+        component = original_button(*mutable_args, **kwargs)
+        return _patch_runtime_text_methods(component)
     def notify(message: Any = None, *args: Any, **kwargs: Any) -> Any:
-        return original_notify(_translate(message), *args, **kwargs)
-
+        component = original_notify(_translate(message), *args, **kwargs)
+        return _patch_runtime_text_methods(component)
     def markdown(content: Any = "", *args: Any, **kwargs: Any) -> Any:
-        return original_markdown(_translate(content), *args, **kwargs)
-
+        component = original_markdown(_translate(content), *args, **kwargs)
+        return _patch_runtime_text_methods(component)
     def input_field(*args: Any, **kwargs: Any) -> Any:
         mutable_args = list(args)
         if mutable_args and isinstance(mutable_args[0], str):
@@ -430,8 +431,8 @@ def install_ui_text_i18n(ui_obj: Any, lang_getter: Callable[[], str]) -> None:
             kwargs["label"] = _translate(kwargs["label"])
         if isinstance(kwargs.get("placeholder"), str):
             kwargs["placeholder"] = _translate(kwargs["placeholder"])
-        return original_input(*mutable_args, **kwargs)
-
+        component = original_input(*mutable_args, **kwargs)
+        return _patch_runtime_text_methods(component)
     def textarea_field(*args: Any, **kwargs: Any) -> Any:
         mutable_args = list(args)
         if mutable_args and isinstance(mutable_args[0], str):
@@ -440,8 +441,8 @@ def install_ui_text_i18n(ui_obj: Any, lang_getter: Callable[[], str]) -> None:
             kwargs["label"] = _translate(kwargs["label"])
         if isinstance(kwargs.get("placeholder"), str):
             kwargs["placeholder"] = _translate(kwargs["placeholder"])
-        return original_textarea(*mutable_args, **kwargs)
-
+        component = original_textarea(*mutable_args, **kwargs)
+        return _patch_runtime_text_methods(component)
     def _translate_options(options: Any) -> Any:
         if isinstance(options, (list, tuple)):
             return [(_translate(item) if isinstance(item, str) else item) for item in options]
@@ -453,7 +454,6 @@ def install_ui_text_i18n(ui_obj: Any, lang_getter: Callable[[], str]) -> None:
                 translated[next_key] = next_value
             return translated
         return options
-
     def select_field(*args: Any, **kwargs: Any) -> Any:
         mutable_args = list(args)
         if mutable_args:
@@ -462,8 +462,8 @@ def install_ui_text_i18n(ui_obj: Any, lang_getter: Callable[[], str]) -> None:
             kwargs["options"] = _translate_options(kwargs["options"])
         if isinstance(kwargs.get("label"), str):
             kwargs["label"] = _translate(kwargs["label"])
-        return original_select(*mutable_args, **kwargs)
-
+        component = original_select(*mutable_args, **kwargs)
+        return _patch_runtime_text_methods(component)
     def toggle_field(*args: Any, **kwargs: Any) -> Any:
         if original_toggle is None:
             return None
@@ -474,8 +474,8 @@ def install_ui_text_i18n(ui_obj: Any, lang_getter: Callable[[], str]) -> None:
             kwargs["options"] = _translate_options(kwargs["options"])
         if isinstance(kwargs.get("label"), str):
             kwargs["label"] = _translate(kwargs["label"])
-        return original_toggle(*mutable_args, **kwargs)
-
+        component = original_toggle(*mutable_args, **kwargs)
+        return _patch_runtime_text_methods(component)
     ui_obj.label = label
     ui_obj.button = button
     ui_obj.notify = notify
