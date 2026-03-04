@@ -295,25 +295,39 @@ def _mojibake_score(text: str) -> int:
     score = 0
     score += sum(1 for ch in text if "\u0080" <= ch <= "\u009f") * 8
     score += text.count("\ufffd") * 10
+
     token_weights: tuple[tuple[str, int], ...] = (
-        ("??", 4),
-        ("??", 2),
-        ("??", 6),
-        ("??", 6),
-        ("?????", 5),
-        ("??????", 6),
-        ("??????", 6),
-        ("?", 4),
-        ("?", 3),
+        ("\u0E40\u0E18", 4),  # เธ
+        ("\u0E40\u0E19", 2),  # เน
+        ("\u0E42\u20AC", 6),  # โ€
+        ("\u0E22\u20AC", 6),  # ย€
+        ("\u0E40\u0E19\u20AC\u0E40\u0E18", 6),  # เน€เธ
+        ("Ã", 4),
+        ("Â", 3),
         ("??", 2),
     )
     for token, weight in token_weights:
         score += text.count(token) * weight
-    if re.search(r"(?:??|??){3,}", text):
+
+    if re.search(r"(?:\u0E40\u0E18|\u0E40\u0E19){3,}", text):
         score += 10
-    if "??" in text and any(token in text for token in ("??", "??", "??", "??", "?", "?", "\ufffd")):
+    if "??" in text and any(
+        token in text
+        for token in (
+            "\u0E40\u0E18",
+            "\u0E40\u0E19",
+            "\u0E42\u20AC",
+            "\u0E22\u20AC",
+            "Ã",
+            "Â",
+            "\ufffd",
+        )
+    ):
         score += 8
+
     return score
+
+
 def _decode_candidate(value: str, source_encoding: str, errors: str) -> str | None:
     try:
         raw = value.encode(source_encoding, errors=errors)
@@ -333,8 +347,8 @@ def _repair_mojibake(text: str) -> str:
                 candidate = _decode_candidate(repaired, source_encoding, mode)
                 if not candidate or candidate == repaired:
                     continue
-                candidate = candidate.replace("?????????", "?")
-                candidate = candidate.replace("???\u0002", "?")
+
+                candidate = candidate.replace("\u0E42\u20AC\u0E02", "•")
                 candidate = re.sub(r"\s{2,}", " ", candidate).strip()
                 candidate_score = _mojibake_score(candidate)
                 if candidate_score < best_score or (
@@ -345,13 +359,16 @@ def _repair_mojibake(text: str) -> str:
         if best_value == repaired:
             break
         repaired = best_value
-    repaired = repaired.replace("?????????", "?")
-    repaired = repaired.replace("???\u0002", "?")
+
+    repaired = repaired.replace("\u0E42\u20AC\u0E02", "•")
+
     # Remove "??" only when the text still looks like mojibake.
     if "??" in repaired and _mojibake_score(repaired) >= 8:
         repaired = repaired.replace("??", "")
     repaired = re.sub(r"\s{2,}", " ", repaired)
     return repaired.strip()
+
+
 def translate_text(text: str, lang: str | None = "TH") -> str:
     if not isinstance(text, str):
         return text

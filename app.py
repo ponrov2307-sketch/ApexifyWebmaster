@@ -55,9 +55,45 @@ from web.i18n import tr, install_ui_text_i18n
 logger = logging.getLogger(__name__)
 install_ui_text_i18n(ui, lambda: app.storage.user.get('lang', 'TH'))
 
+
+def _resolve_http_app():
+    native = getattr(app, "native", None)
+    if native is not None and hasattr(native, "main"):
+        return native.main
+    if hasattr(app, "middleware"):
+        return app
+    return None
+
+
+def _install_utf8_response_guard() -> None:
+    http_app = _resolve_http_app()
+    if http_app is None:
+        return
+    if getattr(http_app, "_apx_utf8_guard_installed", False):
+        return
+
+    @http_app.middleware("http")
+    async def _ensure_utf8_charset(request, call_next):
+        response = await call_next(request)
+        content_type = response.headers.get("content-type", "")
+        lowered = content_type.lower()
+
+        if content_type and "charset=" not in lowered:
+            if lowered.startswith("text/"):
+                response.headers["content-type"] = f"{content_type}; charset=utf-8"
+            elif lowered.startswith("application/json"):
+                response.headers["content-type"] = "application/json; charset=utf-8"
+        return response
+
+    setattr(http_app, "_apx_utf8_guard_installed", True)
+
+
+_install_utf8_response_guard()
+
 # ==========================================
 # ?? APEXIFY X BINANCE OVERHAUL ENGINE
 # ==========================================
+ui.add_head_html('<meta charset="utf-8">', shared=True)
 ui.add_head_html('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&family=Sora:wght@600;700;800&display=swap');
