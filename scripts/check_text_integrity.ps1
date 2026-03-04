@@ -19,13 +19,13 @@ $rules = @(
     @{
         Name = "mojibake_bullet"
         Severity = "fail"
-        Regex = "โ€ข|เนโฌเธ|เน\u0002"
+        Regex = "\u0E42\u20AC\u0E02|\u0E40\u0E19\u20AC\u0E40\u0E18"
         Message = "Found mojibake bullet token."
     },
     @{
         Name = "thai_mojibake_cluster"
         Severity = "warn"
-        Regex = "เธ.{0,6}เธ|เน.{0,6}เธ|โ€|ย€|เน€เธ|เนโฌ|เธขโฌ"
+        Regex = "(?:\u0E40\u0E18|\u0E40\u0E19){3,}|\u0E42\u20AC|\u0E22\u20AC|\u00C3|\u00C2|\uFFFD|[\u0400-\u04FF]{8,}"
         Message = "Found likely Thai mojibake cluster."
     }
 )
