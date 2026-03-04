@@ -1131,11 +1131,21 @@ async def main_page(client):
                     ui.label(lock_text).classes(f'text-[10px] font-black tracking-widest px-3 py-1 rounded-full border {lock_class}')
 
                 if not is_pro_plan:
-                    with ui.row().classes('w-full items-center justify-between gap-4 bg-[#0B0E14]/70 border border-white/5 rounded-2xl p-4 flex-col md:flex-row'):
-                        with ui.column().classes('gap-1'):
-                            ui.label('🔒 PRO ONLY').classes('text-sm font-black text-[#FCD535] tracking-widest')
-                            ui.label(f'พบ {holdings_count} holdings ในพอร์ตของคุณ พร้อมสร้างแผนได้ทันทีเมื่ออัปเกรด').classes('text-xs text-gray-400')
-                        ui.button('UPGRADE TO PRO', on_click=lambda: ui.navigate.to('/payment')).classes('bg-[#FCD535] text-black font-black px-6 py-2 rounded-full text-xs shadow-lg hover:scale-105')
+                    teaser_assets = sorted(panel_assets, key=lambda x: abs(float(x.get('profit_pct', 0) or 0)), reverse=True)[:3]
+                    with ui.column().classes('w-full gap-3 bg-[#0B0E14]/70 border border-white/5 rounded-2xl p-4'):
+                        with ui.row().classes('w-full items-center justify-between flex-wrap gap-2'):
+                            ui.label('🔒 PRO PREVIEW').classes('text-sm font-black text-[#FCD535] tracking-widest')
+                            ui.button('UNLOCK FULL TRADE PLAN', on_click=lambda: ui.navigate.to('/payment')).classes('bg-[#FCD535] text-black font-black px-4 py-2 rounded-full text-[10px] shadow-lg hover:scale-105')
+
+                        if teaser_assets:
+                            for asset in teaser_assets:
+                                plan = build_trade_plan(asset)
+                                bias = 'Bullish' if plan['suggested_action'] in ['HOLD', 'TAKE PROFIT'] else 'Defensive'
+                                with ui.row().classes('w-full justify-between items-center rounded-xl bg-white/5 border border-white/10 px-3 py-2'):
+                                    ui.label(plan['ticker']).classes('text-sm font-black text-white')
+                                    ui.label(f"Bias: {bias}").classes('text-[10px] font-bold text-gray-300')
+                        else:
+                            ui.label('ยังไม่มี holdings สำหรับ preview').classes('text-xs text-gray-400')
                     return
 
                 if not panel_assets:
@@ -1202,6 +1212,47 @@ async def main_page(client):
                 d.get('curr_rate', 1.0),
             )
 
+        def render_health_score_panel(panel_assets, role):
+            report = compute_portfolio_health(panel_assets or [])
+            is_pro = str(role).upper() in ['PRO', 'VIP', 'ADMIN']
+
+            with ui.column().classes('w-full ax-card p-5 md:p-6 gap-4 border border-white/5'):
+                with ui.row().classes('w-full justify-between items-center flex-wrap gap-2'):
+                    ui.label('PORTFOLIO HEALTH SCORE').classes('text-xs md:text-sm font-black text-[#39C8FF] tracking-widest uppercase')
+                    ui.label(f"Score {report['score']}/100").classes('text-sm font-black text-white px-3 py-1 rounded-full bg-[#39C8FF]/15 border border-[#39C8FF]/30')
+
+                if not is_pro:
+                    teaser_issue = report['issues'][0] if report['issues'] else 'Risk diagnosis available in PRO'
+                    teaser_action = report['actions'][0] if report['actions'] else 'Unlock PRO for full action plan'
+                    with ui.column().classes('w-full gap-2 rounded-2xl bg-[#0B0E14]/70 border border-white/10 p-4'):
+                        ui.label(f'Issue: {teaser_issue}').classes('text-sm text-gray-300 font-bold')
+                        ui.label(f'Action: {teaser_action}').classes('text-xs text-gray-400')
+                        ui.button('UNLOCK FULL HEALTH DIAGNOSIS', on_click=lambda: ui.navigate.to('/payment')).classes('bg-[#FCD535] text-black font-black rounded-full px-5 py-2 text-xs w-full md:w-auto')
+                    return
+
+                with ui.row().classes('w-full gap-2 flex-wrap'):
+                    for k, v in report['subscores'].items():
+                        badge = '#32D74B' if v >= 70 else '#FCD535' if v >= 45 else '#FF453A'
+                        with ui.column().classes('flex-1 min-w-[140px] bg-white/5 rounded-xl border border-white/10 p-3'):
+                            ui.label(k).classes('text-[10px] text-gray-500 font-black tracking-widest uppercase')
+                            ui.label(f'{v}/100').classes('text-lg font-black').style(f'color:{badge};')
+
+                with ui.column().classes('w-full gap-2 mt-1'):
+                    ui.label('TOP ISSUES').classes('text-[10px] text-gray-500 font-black tracking-widest uppercase')
+                    for issue in report['issues']:
+                        ui.label(f'• {issue}').classes('text-xs text-gray-300')
+                    ui.label('ACTION PLAN').classes('text-[10px] text-gray-500 font-black tracking-widest uppercase mt-1')
+                    for action in report['actions']:
+                        ui.label(f'• {action}').classes('text-xs text-[#20D6A1]')
+                    ui.label(f"What-if score after fixes: {report['what_if_score']}/100").classes('text-xs font-black text-[#39C8FF] mt-2')
+
+        health_score_container = ui.column().classes('w-full mt-2')
+        with health_score_container:
+            render_health_score_panel(
+                d.get('sorted_assets', []),
+                d.get('role', 'FREE'),
+            )
+
         def refresh_trade_plan_panel(next_data):
             trade_plan_container.clear()
             with trade_plan_container:
@@ -1210,6 +1261,14 @@ async def main_page(client):
                     next_data.get('role', 'FREE'),
                     next_data.get('curr_sym', '$'),
                     next_data.get('curr_rate', 1.0),
+                )
+
+        def refresh_health_score_panel(next_data):
+            health_score_container.clear()
+            with health_score_container:
+                render_health_score_panel(
+                    next_data.get('sorted_assets', []),
+                    next_data.get('role', 'FREE'),
                 )
 
         with ui.row().classes('w-full justify-between items-center mt-6 mb-2 border-b border-white/5 pb-2 flex-wrap gap-2'):
@@ -1620,6 +1679,7 @@ async def main_page(client):
         d['sorted_assets'] = nd['sorted_assets']
         d['sidebar_pulse'] = nd.get('sidebar_pulse', {})
         refresh_trade_plan_panel(nd)
+        refresh_health_score_panel(nd)
         
         if current_tickers != new_tickers:
             trigger_sort_refresh() # ถ้ามีการเพิ่ม/ลบหุ้น ให้วาดใหม่
