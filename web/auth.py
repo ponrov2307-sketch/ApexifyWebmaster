@@ -146,6 +146,17 @@ def _login_user_from_telegram_id(tid: str) -> bool:
     return True
 
 
+def login_with_dashboard_credentials(telegram_id: str, password: str) -> bool:
+    """Fallback login for dashboard links carrying telegram_id + password."""
+    tid_str = str(telegram_id or "").strip()
+    pwd = str(password or "").strip()
+    if not tid_str or not pwd:
+        return False
+    if not _verify_password(tid_str, pwd):
+        return False
+    return _login_user_from_telegram_id(tid_str)
+
+
 def login_page():
     with ui.column().classes("absolute inset-0 items-center justify-center"):
         ui.element("div").classes(

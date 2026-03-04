@@ -45,6 +45,7 @@ from web.auth import (
     logout,
     _verify_dashboard_token,
     _login_user_from_telegram_id,
+    login_with_dashboard_credentials,
     get_token_login_error,
 )
 from web.router import standard_page_frame
@@ -912,47 +913,72 @@ def _mask_telegram_id(tid: str) -> str:
     return f"{raw[:2]}***{raw[-2:]}"
 
 
-def _get_token_query(client) -> str:
+def _get_query_param(client, key: str) -> str:
     request = getattr(client, "request", None)
     if request is None:
         return ""
     query_params = getattr(request, "query_params", None)
     if query_params is None:
         return ""
-    return str(query_params.get("token", "") or "").strip()
+    return str(query_params.get(key, "") or "").strip()
 
 
 @ui.page('/login-token')
 async def login_token_route(client):
-    if not AUTH_ALLOW_TOKEN_LOGIN:
-        logger.warning("token_login_invalid reason=disabled")
-        ui.notify('Token login is disabled.', type='warning')
+    token = _get_query_param(client, "token")
+    query_tid = _get_query_param(client, "telegram_id") or _get_query_param(client, "tid")
+    query_pwd = (
+        _get_query_param(client, "password")
+        or _get_query_param(client, "passcode")
+        or _get_query_param(client, "pwd")
+    )
+    token_error_reason = None
+
+    if token:
+        if not AUTH_ALLOW_TOKEN_LOGIN:
+            logger.warning("token_login_invalid reason=disabled")
+            token_error_reason = "disabled"
+        else:
+            payload = _verify_dashboard_token(token)
+            if payload:
+                tid = payload["telegram_id"]
+                if _login_user_from_telegram_id(tid):
+                    logger.info("token_login_success telegram_id=%s", _mask_telegram_id(tid))
+                    ui.notify('Login success', type='positive')
+                    ui.navigate.to('/')
+                    return
+                logger.warning("token_login_invalid reason=user_not_found telegram_id=%s", _mask_telegram_id(tid))
+                token_error_reason = "user_not_found"
+            else:
+                token_error_reason = get_token_login_error() or "invalid"
+
+    # Fallback path for dashboard button carrying explicit credentials.
+    if query_tid and query_pwd:
+        if login_with_dashboard_credentials(query_tid, query_pwd):
+            logger.info("credential_login_success telegram_id=%s", _mask_telegram_id(query_tid))
+            ui.notify('Login success', type='positive')
+            ui.navigate.to('/')
+            return
+        logger.warning("credential_login_invalid telegram_id=%s", _mask_telegram_id(query_tid))
+        ui.notify('Invalid login link credentials. Please re-open dashboard from bot.', type='negative')
         ui.navigate.to('/login')
         return
 
-    token = _get_token_query(client)
-    payload = _verify_dashboard_token(token)
-    if not payload:
-        reason = get_token_login_error()
+    if token:
+        reason = token_error_reason or "invalid"
         if reason == "expired":
             logger.warning("token_login_expired")
             ui.notify('Token expired. Please open login from Telegram bot again.', type='negative')
+        elif reason == "disabled":
+            ui.notify('Token login is disabled.', type='warning')
+        elif reason == "user_not_found":
+            ui.notify('Telegram account not found. Please start bot first.', type='negative')
         else:
             logger.warning("token_login_invalid reason=%s", reason)
             ui.notify('Invalid token login. Please open from Telegram bot again.', type='negative')
-        ui.navigate.to('/login')
-        return
-
-    tid = payload["telegram_id"]
-    if not _login_user_from_telegram_id(tid):
-        logger.warning("token_login_invalid reason=user_not_found telegram_id=%s", _mask_telegram_id(tid))
-        ui.notify('Telegram account not found. Please start bot first.', type='negative')
-        ui.navigate.to('/login')
-        return
-
-    logger.info("token_login_success telegram_id=%s", _mask_telegram_id(tid))
-    ui.notify('Login success', type='positive')
-    ui.navigate.to('/')
+    else:
+        ui.notify('Login link is missing required parameters.', type='warning')
+    ui.navigate.to('/login')
 
 
 # ==========================================
