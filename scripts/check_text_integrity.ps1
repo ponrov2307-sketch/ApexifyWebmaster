@@ -1,5 +1,6 @@
 param(
     [string[]]$Targets = @(
+        "app.py",
         "web\router.py",
         "web\components\table.py",
         "web\components\charts.py"
@@ -20,8 +21,8 @@ $banned = @(
     },
     @{
         Name = "thai_mojibake_cluster"
-        Regex = "เธ[A-Za-z0-9]|เน[A-Za-z0-9]"
-        Message = "Found likely Thai mojibake cluster."
+        Regex = "เธ.*เธ|เน.*เธ|โ€|ย€"
+        Message = "Found likely Thai mojibake cluster in a UI string."
     }
 )
 
@@ -29,7 +30,7 @@ $hasIssue = $false
 
 foreach ($file in $Targets) {
     if (-not (Test-Path $file)) { continue }
-    $lines = Get-Content $file
+    $lines = Get-Content $file -Encoding UTF8
     for ($idx = 0; $idx -lt $lines.Count; $idx++) {
         $line = $lines[$idx]
         if ($line.TrimStart().StartsWith("#")) { continue }

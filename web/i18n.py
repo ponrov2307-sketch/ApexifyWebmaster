@@ -289,37 +289,71 @@ def tr(key: str, lang: str | None = "TH", **kwargs: Any) -> str:
         return template
 
 
-def _looks_mojibake(text: str) -> bool:
+def _mojibake_score(text: str) -> int:
     if not isinstance(text, str):
+        return 0
+
+    controls = sum(1 for ch in text if "\u0080" <= ch <= "\u009f")
+    score = controls * 6
+    score += text.count("เธ") * 4
+    score += text.count("โ€") * 5
+    score += text.count("ย€") * 5
+    score += text.count("??") * 2
+
+    # Count "เน" as suspicious only when paired with obvious mojibake markers.
+    if "เธ" in text or "โ€" in text or "ย€" in text:
+        score += text.count("เน") * 2
+
+    return score
+
+
+def _looks_mojibake(text: str) -> bool:
+    if not isinstance(text, str) or not text:
         return False
+
     if any("\u0080" <= ch <= "\u009f" for ch in text):
         return True
-    # Common mojibake prefixes from Thai UTF-8 decoded with the wrong codec.
-    return any(token in text for token in ("เธ", "เน", "โ€", "ย€"))
+    if any(token in text for token in ("โ€", "ย€")):
+        return True
+    if text.count("เธ") >= 2:
+        return True
+    if text.count("เธ") >= 1 and text.count("เน") >= 1:
+        return True
+    if "??" in text and ("เธ" in text or "เน" in text):
+        return True
+
+    return False
 
 
-def _decode_chain(value: str, encodings: tuple[str, ...]) -> str:
-    candidate = value
-    for source_encoding in encodings:
-        try:
-            raw = candidate.encode(source_encoding)
-            decoded = raw.decode("utf-8")
-            candidate = decoded
-        except Exception:
-            continue
-    return candidate
+def _decode_once(value: str, source_encoding: str) -> str:
+    try:
+        raw = value.encode(source_encoding)
+        return raw.decode("utf-8")
+    except Exception:
+        return value
 
 
 def _repair_mojibake(text: str) -> str:
     repaired = str(text)
 
-    for _ in range(2):
+    for _ in range(3):
         if not _looks_mojibake(repaired):
             break
-        next_value = _decode_chain(repaired, ("cp874", "latin-1", "cp1252"))
-        if next_value == repaired:
+
+        baseline = _mojibake_score(repaired)
+        best_value = repaired
+        best_score = baseline
+
+        for source_encoding in ("cp874", "latin-1", "cp1252"):
+            candidate = _decode_once(repaired, source_encoding)
+            candidate_score = _mojibake_score(candidate)
+            if candidate_score < best_score:
+                best_value = candidate
+                best_score = candidate_score
+
+        if best_value == repaired:
             break
-        repaired = next_value
+        repaired = best_value
 
     repaired = repaired.replace("โ€ข", "•")
     repaired = repaired.replace("โ\u0002", "•")
@@ -369,6 +403,7 @@ def install_ui_text_i18n(ui_obj: Any, lang_getter: Callable[[], str]) -> None:
     original_input = ui_obj.input
     original_textarea = ui_obj.textarea
     original_select = ui_obj.select
+    original_toggle = getattr(ui_obj, "toggle", None)
 
     def label(text: Any = "", *args: Any, **kwargs: Any) -> Any:
         return original_label(_translate(text), *args, **kwargs)
@@ -407,10 +442,39 @@ def install_ui_text_i18n(ui_obj: Any, lang_getter: Callable[[], str]) -> None:
             kwargs["placeholder"] = _translate(kwargs["placeholder"])
         return original_textarea(*mutable_args, **kwargs)
 
+    def _translate_options(options: Any) -> Any:
+        if isinstance(options, (list, tuple)):
+            return [(_translate(item) if isinstance(item, str) else item) for item in options]
+        if isinstance(options, dict):
+            translated: dict[Any, Any] = {}
+            for key, value in options.items():
+                next_key = _translate(key) if isinstance(key, str) else key
+                next_value = _translate(value) if isinstance(value, str) else value
+                translated[next_key] = next_value
+            return translated
+        return options
+
     def select_field(*args: Any, **kwargs: Any) -> Any:
+        mutable_args = list(args)
+        if mutable_args:
+            mutable_args[0] = _translate_options(mutable_args[0])
+        if "options" in kwargs:
+            kwargs["options"] = _translate_options(kwargs["options"])
         if isinstance(kwargs.get("label"), str):
             kwargs["label"] = _translate(kwargs["label"])
-        return original_select(*args, **kwargs)
+        return original_select(*mutable_args, **kwargs)
+
+    def toggle_field(*args: Any, **kwargs: Any) -> Any:
+        if original_toggle is None:
+            return None
+        mutable_args = list(args)
+        if mutable_args:
+            mutable_args[0] = _translate_options(mutable_args[0])
+        if "options" in kwargs:
+            kwargs["options"] = _translate_options(kwargs["options"])
+        if isinstance(kwargs.get("label"), str):
+            kwargs["label"] = _translate(kwargs["label"])
+        return original_toggle(*mutable_args, **kwargs)
 
     ui_obj.label = label
     ui_obj.button = button
@@ -419,4 +483,6 @@ def install_ui_text_i18n(ui_obj: Any, lang_getter: Callable[[], str]) -> None:
     ui_obj.input = input_field
     ui_obj.textarea = textarea_field
     ui_obj.select = select_field
+    if original_toggle is not None:
+        ui_obj.toggle = toggle_field
     ui_obj._apx_i18n_installed = True
