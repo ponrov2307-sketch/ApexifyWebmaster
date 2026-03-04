@@ -103,6 +103,14 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "macro.subtitle": "Global macro warning dashboard with real-time risk scan.",
         "macro.ai.high_yield": "Bond yields are elevated and equity risk is higher. Focus on value/dividend profiles and tighten risk controls.",
         "matchmaker.swipe_hint": "Swipe left to skip • Swipe right to add to Watchlist/Alerts",
+        "ai_rebalance.title": "AI REBALANCING STRATEGY",
+        "ai_rebalance.button": "AI REBALANCE",
+        "ai_rebalance.pro_only": "AI Rebalance is available for PRO only.",
+        "ai_rebalance.ack": "Acknowledge",
+        "port_doctor.title": "PORT DOCTOR DIAGNOSIS",
+        "port_doctor.subtitle": "AI scans your portfolio health deeply and suggests practical fixes.",
+        "port_doctor.pro_only": "Port Doctor is available for PRO/ADMIN only.",
+        "port_doctor.start_scan": "Start Portfolio Scan",
         "copilot.title": "APEXIFY COPILOT",
         "copilot.fab": "Apexify Copilot",
         "copilot.subtitle": "Chat continuously with AI across multiple messages",
@@ -209,6 +217,14 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "macro.subtitle": "หน้าปัดเตือนเศรษฐกิจโลกพร้อมสแกนความเสี่ยงแบบเรียลไทม์",
         "macro.ai.high_yield": "บอนด์ยีลด์อยู่ในระดับสูงและเพิ่มความเสี่ยงต่อหุ้น ควรเน้นหุ้นคุณค่า/ปันผล และคุมความเสี่ยงให้เข้มขึ้น",
         "matchmaker.swipe_hint": "ปัดซ้ายเพื่อข้าม • ปัดขวาเพื่อเพิ่มเข้า Watchlist/Alerts",
+        "ai_rebalance.title": "AI REBALANCING STRATEGY",
+        "ai_rebalance.button": "AI REBALANCE",
+        "ai_rebalance.pro_only": "AI Rebalance ใช้งานได้สำหรับ PRO เท่านั้น",
+        "ai_rebalance.ack": "รับทราบ",
+        "port_doctor.title": "PORT DOCTOR DIAGNOSIS",
+        "port_doctor.subtitle": "ให้ AI รับบทเป็นคุณหมอ สแกนสุขภาพพอร์ตแบบเจาะลึก พร้อมคำแนะนำเพื่อแก้พอร์ตติดดอย",
+        "port_doctor.pro_only": "Port Doctor ใช้งานได้สำหรับแพ็กเกจ PRO/ADMIN เท่านั้น",
+        "port_doctor.start_scan": "เริ่มสแกนสุขภาพพอร์ต",
         "copilot.title": "APEXIFY COPILOT",
         "copilot.fab": "Apexify Copilot",
         "copilot.subtitle": "คุยกับ AI แบบต่อเนื่องหลายข้อความ",
@@ -310,8 +326,6 @@ _SUSPICIOUS_MOJIBAKE_TOKENS: tuple[str, ...] = (
     "\u00C3",
     "\u00C2",
     "\ufffd",
-    "㹰",
-    "ҹ",
 )
 
 
@@ -323,6 +337,11 @@ def _should_attempt_repair(text: str) -> bool:
     if not isinstance(text, str) or not text:
         return False
 
+    thai_count = _count_script(text, 0x0E00, 0x0E7F)
+    cyr_count = _count_script(text, 0x0400, 0x04FF)
+    cjk_count = _count_script(text, 0x3400, 0x9FFF)
+    latin_count = sum(1 for ch in text if ("A" <= ch <= "Z") or ("a" <= ch <= "z"))
+
     if any("\u0080" <= ch <= "\u009f" for ch in text):
         return True
     if "\ufffd" in text:
@@ -330,23 +349,9 @@ def _should_attempt_repair(text: str) -> bool:
     if any(token in text for token in _SUSPICIOUS_MOJIBAKE_TOKENS):
         return True
 
-    # Common Thai mojibake signature mixed with latin-1 supplement bytes.
-    if ("เธ" in text or "เน" in text) and any("\u0080" <= ch <= "\u00ff" for ch in text):
+    # Thai text mixed with latin-1 supplement bytes is usually damaged.
+    if thai_count > 0 and any("\u0080" <= ch <= "\u00ff" for ch in text):
         return True
-
-    if text.count("เธ") >= 3:
-        return True
-
-    thai_e = text.count("\u0E40\u0E18")  # เธ
-    thai_n = text.count("\u0E40\u0E19")  # เน
-    thai_combo = thai_e + thai_n
-    if len(text) >= 24 and thai_e >= 2 and thai_n >= 2 and thai_combo >= 6 and (thai_combo / max(len(text), 1)) > 0.12:
-        return True
-
-    thai_count = _count_script(text, 0x0E00, 0x0E7F)
-    cyr_count = _count_script(text, 0x0400, 0x04FF)
-    cjk_count = _count_script(text, 0x3400, 0x9FFF)
-    latin_count = sum(1 for ch in text if ("A" <= ch <= "Z") or ("a" <= ch <= "z"))
 
     if (cyr_count + cjk_count) >= 8 and thai_count == 0 and latin_count < (len(text) * 0.35):
         return True
@@ -362,7 +367,6 @@ def _mojibake_score(text: str) -> int:
     score += text.count("\ufffd") * 10
 
     token_weights: tuple[tuple[str, int], ...] = (
-        ("\u0E40\u0E18", 4),
         ("\u0E42\u20AC", 6),
         ("\u0E22\u20AC", 6),
         ("\u0E40\u0E19\u20AC\u0E40\u0E18", 6),
@@ -373,8 +377,6 @@ def _mojibake_score(text: str) -> int:
     for token, weight in token_weights:
         score += text.count(token) * weight
 
-    if re.search(r"(?:\u0E40\u0E18|\u0E40\u0E19){3,}", text):
-        score += 10
     if "??" in text and any(token in text for token in _SUSPICIOUS_MOJIBAKE_TOKENS):
         score += 8
 
@@ -408,19 +410,6 @@ def _repair_mojibake(text: str) -> str:
         return repaired
     if not _should_attempt_repair(repaired):
         return _cleanup_candidate(repaired)
-
-    # First pass for common broken Thai text signatures.
-    if ("เธ" in repaired or "เน" in repaired) and any("\u0080" <= ch <= "\u00ff" for ch in repaired):
-        baseline_score = _mojibake_score(repaired)
-        for mode in ("strict", "ignore", "replace"):
-            candidate = _decode_candidate(repaired, "cp874", mode)
-            if not candidate:
-                continue
-            candidate = _cleanup_candidate(candidate)
-            candidate_score = _mojibake_score(candidate)
-            if candidate_score < baseline_score:
-                repaired = candidate
-                break
 
     for _ in range(4):
         baseline = _mojibake_score(repaired)
