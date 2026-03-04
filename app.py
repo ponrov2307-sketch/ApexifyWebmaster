@@ -818,7 +818,11 @@ async def main_page(client):
             'mood_color': fg_color,
             'updated_at': datetime.now(UTC).isoformat(),
         }
-        app.storage.client['sidebar_pulse'] = sidebar_pulse
+        try:
+            app.storage.client['sidebar_pulse'] = sidebar_pulse
+        except RuntimeError:
+            # Client can disconnect while background refresh is still running.
+            pass
 
         # ส่งข้อมูลทั้งหมดไปแสดงผล
         return {
@@ -1385,6 +1389,8 @@ async def main_page(client):
 
         # 🌟 [แก้บั๊กที่ 2] ฟังก์ชันตัวกลางสำหรับรอให้ข้อมูลโหลด 100% ก่อนเด้ง Popup
         async def trigger_popup():
+            if not client.has_socket_connection:
+                return
             nd = await load_dashboard_data()
             today_str = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d')
             last_seen = app.storage.user.get('last_summary_date', '')
@@ -1410,6 +1416,12 @@ async def main_page(client):
         
         if app.storage.client.get('modal_open', False): return
         nd = await load_dashboard_data()
+
+        def safe_remove_pop(el):
+            try:
+                el.classes(remove='animate-pop')
+            except RuntimeError:
+                pass
 
         # 1. อัปเดต VIP Command Center
         days_left = nd.get('days_left')
@@ -1437,7 +1449,7 @@ async def main_page(client):
         # 💥 เล่นอนิเมชั่นเด้ง (Pop) ถ้ายอดเงินมีการเปลี่ยนแปลง!
         if old_nw != new_nw and old_nw != 0:
             ui_refs['net_worth'].classes(add='animate-pop')
-            ui.timer(0.4, lambda: ui_refs['net_worth'].classes(remove='animate-pop'), once=True)
+            ui.timer(0.4, lambda: safe_remove_pop(ui_refs['net_worth']), once=True)
 
         ui_refs['total_profit'].set_text(f'{"▲" if nd["is_profit_overall"] else "▼"} {nd["curr_sym"]}{abs(nd["total_profit"]):,.2f} ({sign}{pct:.2f}%)')
         ui_refs['total_profit'].classes(remove='text-[#32D74B] text-[#FF453A]', add=new_color)
@@ -1448,7 +1460,7 @@ async def main_page(client):
             if ui_refs['lbl_gainer'].text != new_gainer:
                 ui_refs['lbl_gainer'].set_text(new_gainer)
                 ui_refs['lbl_gainer'].classes(add='animate-pop')
-                ui.timer(0.4, lambda: ui_refs['lbl_gainer'].classes(remove='animate-pop'), once=True)
+                ui.timer(0.4, lambda: safe_remove_pop(ui_refs['lbl_gainer']), once=True)
             ui_refs['box_gainer'].set_visibility(True)
         else: ui_refs['box_gainer'].set_visibility(False)
             
@@ -1457,7 +1469,7 @@ async def main_page(client):
             if ui_refs['lbl_loser'].text != new_loser:
                 ui_refs['lbl_loser'].set_text(new_loser)
                 ui_refs['lbl_loser'].classes(add='animate-pop')
-                ui.timer(0.4, lambda: ui_refs['lbl_loser'].classes(remove='animate-pop'), once=True)
+                ui.timer(0.4, lambda: safe_remove_pop(ui_refs['lbl_loser']), once=True)
             ui_refs['box_loser'].set_visibility(True)
         else: ui_refs['box_loser'].set_visibility(False)
         # 🌟 4. ยิงข้อมูลอัปเดตเข้าการ์ดหุ้น "ทีละใบแบบเนียนๆ" (ไม่กระพริบ!)
@@ -1495,7 +1507,7 @@ async def main_page(client):
                         ui_refs[f'val_{t}'].set_text(new_val_str)
                         ui_refs[f'val_{t}'].style(f'color: {p_color};')
                         ui_refs[f'val_{t}'].classes(add='animate-pop')
-                        ui.timer(0.4, lambda t=t: ui_refs[f'val_{t}'].classes(remove='animate-pop'), once=True)
+                        ui.timer(0.4, lambda t=t: safe_remove_pop(ui_refs[f'val_{t}']), once=True)
                     
                     # อัปเดต ราคาล่าสุด ป้าย PnL 
                     ui_refs[f'lbl_price_{t}'].set_text(f"Price: {curr_sym}{last_price:,.2f}")
