@@ -3078,7 +3078,7 @@ def healthz():
 def run_web() -> None:
     ui.run(
         title=APP_TITLE,
-        favicon="??",
+        favicon="\U0001F4C8",
         dark=True,
         host=APP_HOST,
         port=APP_PORT,
