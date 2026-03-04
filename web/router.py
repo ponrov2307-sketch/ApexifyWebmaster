@@ -117,10 +117,14 @@ def render_apexify_copilot_fab(role: str):
                         ui.markdown('**Copilot is a PRO/VIP feature.**\n\nอัปเกรดเพื่อใช้ AI บนเว็บแบบสดทันที').classes('text-sm text-gray-300')
                     ui.button('UPGRADE TO PRO', on_click=lambda: ui.navigate.to('/payment')).classes('w-full bg-[#FCD535] text-black font-black rounded-xl py-2')
                 else:
+                    state = {'sending': False}
                     async def send_prompt():
+                        if state['sending']:
+                            return
                         q = (prompt_input.value or '').strip()
                         if not q:
                             return
+                        state['sending'] = True
                         prompt_input.value = ''
                         typing = None
                         with history:
