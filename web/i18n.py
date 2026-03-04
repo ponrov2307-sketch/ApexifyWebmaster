@@ -318,8 +318,10 @@ def _should_attempt_repair(text: str) -> bool:
     if any(token in text for token in _SUSPICIOUS_MOJIBAKE_TOKENS):
         return True
 
-    thai_combo = text.count("\u0E40\u0E18") + text.count("\u0E40\u0E19")  # เธ / เน
-    if len(text) >= 24 and thai_combo >= 6 and (thai_combo / max(len(text), 1)) > 0.12:
+    thai_e = text.count("\u0E40\u0E18")  # เธ
+    thai_n = text.count("\u0E40\u0E19")  # เน
+    thai_combo = thai_e + thai_n
+    if len(text) >= 24 and thai_e >= 2 and thai_n >= 2 and thai_combo >= 6 and (thai_combo / max(len(text), 1)) > 0.12:
         return True
 
     thai_count = _count_script(text, 0x0E00, 0x0E7F)

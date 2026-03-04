@@ -2351,25 +2351,25 @@ async def analytics_page(client):
                         ui.element('div').classes('absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#32D74B]/10 via-transparent to-transparent opacity-50 pointer-events-none')
                         ui.icon('health_and_safety', size='64px').classes('text-[#32D74B] mb-4 drop-shadow-[0_0_20px_rgba(50,215,75,0.8)] animate-pulse')
                         ui.label('PORT DOCTOR DIAGNOSIS').classes('text-2xl md:text-3xl font-black text-white tracking-widest text-center')
-                        ui.label('เนเธซเน AI เธชเธงเธกเธเธ—เธเธธเธ“เธซเธกเธญ เธชเนเธเธเธชเธธเธเธ เธฒเธเธเธญเธฃเนเธ•เนเธเธเน€เธเธฒเธฐเธฅเธถเธ เธเธฃเนเธญเธกเธเธฑเธ”เธขเธฒ (เธเธณเนเธเธฐเธเธณ) เน€เธเธทเนเธญเนเธเนเธเธญเธฃเนเธ•เธ•เธดเธ”เธ”เธญเธข').classes('text-gray-400 text-sm mt-2 text-center max-w-md')
+                        ui.label('ให้ AI รับบทเป็นคุณหมอ สแกนสุขภาพพอร์ตแบบเจาะลึก พร้อมคำแนะนำเพื่อแก้พอร์ตติดดอย').classes('text-gray-400 text-sm mt-2 text-center max-w-md')
                         
                         ai_loading = ui.spinner('dots', size='xl', color='#32D74B').classes('mt-8 hidden')
                         ai_result = ui.markdown('').classes('text-sm md:text-base text-gray-300 leading-relaxed text-left mt-6 max-w-2xl hidden bg-[#0B0E14]/80 backdrop-blur-md p-6 md:p-8 rounded-[24px] border border-[#32D74B]/30 shadow-[0_0_30px_rgba(50,215,75,0.1)] custom-scrollbar overflow-y-auto max-h-[300px] w-full')
                         
                         async def generate_doctor():
-                            # ?? เน€เธเนเธเธชเธดเธ—เธเธดเน PRO เนเธฅเธฐ Admin
+                            # Access is restricted to PRO/ADMIN.
                             tid = app.storage.user.get('telegram_id')
                             user_info = get_user_by_telegram(tid) if tid else {}
                             role = str(user_info.get('role', 'free')).lower()
                             
                             if role not in ['pro', 'admin']:
-                                ui.notify('เธเธตเน€เธเธญเธฃเน Port Doctor เธชเธเธงเธเธชเธดเธ—เธเธดเนเธชเธณเธซเธฃเธฑเธเนเธเนเธเน€เธเธ PRO เน€เธ—เนเธฒเธเธฑเนเธ!', type='warning')
+                                ui.notify('Port Doctor ใช้งานได้สำหรับแพ็กเกจ PRO/ADMIN เท่านั้น', type='warning')
                                 return
                                 
                             btn_ai.set_visibility(False)
                             ai_loading.classes(remove='hidden')
                             
-                            # เน€เธ•เธฃเธตเธขเธกเธเนเธญเธกเธนเธฅเธเธญเธฃเนเธ•เธชเนเธเนเธซเนเธเธธเธ“เธซเธกเธญ
+                            # Build compact portfolio summary for AI.
                             port_str = ", ".join([f"{a['ticker']}: ${a['value']:,.0f}" for a in assets_data])
                             from services.gemini_ai import generate_port_doctor_diagnosis
                             res = await run.io_bound(generate_port_doctor_diagnosis, port_str)
@@ -2378,7 +2378,7 @@ async def analytics_page(client):
                             ai_result.classes(remove='hidden')
                             ai_result.set_content(res)
                             
-                        btn_ai = ui.button('เน€เธฃเธดเนเธกเธชเนเธเธเธชเธธเธเธ เธฒเธเธเธญเธฃเนเธ•', icon='vaccines', on_click=generate_doctor).classes('mt-8 bg-[#1C2128] border border-[#32D74B]/50 text-[#32D74B] font-black py-4 px-10 rounded-full shadow-[0_0_30px_rgba(50,215,75,0.2)] hover:bg-[#32D74B] hover:text-black transition-all text-lg')
+                        btn_ai = ui.button('เริ่มสแกนสุขภาพพอร์ต', icon='vaccines', on_click=generate_doctor).classes('mt-8 bg-[#1C2128] border border-[#32D74B]/50 text-[#32D74B] font-black py-4 px-10 rounded-full shadow-[0_0_30px_rgba(50,215,75,0.2)] hover:bg-[#32D74B] hover:text-black transition-all text-lg')
                 
                 elif mode == 'Sector Flow':
                     window_map = {'5D': '5d', '1M': '1mo', '3M': '3mo', '6M': '6mo'}
@@ -2576,7 +2576,7 @@ async def dividend_page():
 
             symbol = str(ticker_input.value or '').strip().upper()
             if not symbol:
-                ui.notify('เธเธฃเธญเธ ticker เธชเธณเธซเธฃเธฑเธ Real Backtest', type='warning')
+                ui.notify('กรอก ticker สำหรับ Real Backtest', type='warning')
                 return
 
             backtest = await run.io_bound(get_real_drip_backtest, symbol, years, initial if initial > 0 else 10000.0)
@@ -2588,7 +2588,7 @@ async def dividend_page():
                     with ui.column().classes('w-full ax-card p-8 items-center text-center gap-2'):
                         ui.icon('warning', size='3rem').classes('text-[#FF5E6C]')
                         ui.label('insufficient data').classes('text-lg font-black text-white')
-                        ui.label('เนเธกเนเธชเธฒเธกเธฒเธฃเธ–เนเธซเธฅเธ”เธเนเธญเธกเธนเธฅเธเธฃเธดเธเธชเธณเธซเธฃเธฑเธ ticker/เธเนเธงเธเน€เธงเธฅเธฒเธเธตเน').classes('text-sm text-gray-400')
+                        ui.label('ไม่สามารถโหลดข้อมูลจริงสำหรับ ticker/ช่วงเวลานี้').classes('text-sm text-gray-400')
                 return
 
             s = backtest['summary']
