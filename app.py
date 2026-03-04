@@ -1446,14 +1446,14 @@ async def main_page(client):
                     )
                     for a in d['sorted_assets']:
                         pct = (float(a.get('total_value', 0) or 0) / total_port_value * 100) if total_port_value > 0 else 0
-                        port_data += f"- เธซเธธเนเธ {a['ticker']}: เธชเธฑเธ”เธชเนเธงเธ {pct:.2f}%, เธเธณเนเธฃ {a['profit_pct']:+.2f}%\n"
+                        port_data += f"- {a['ticker']}: allocation {pct:.2f}%, profit {a['profit_pct']:+.2f}%\n"
                     
                     # 3. Build AI dialog
                     with ui.dialog() as ai_dialog, ui.card().classes('w-full max-w-2xl bg-[#0B0E14] border border-[#FCD535]/50 p-6 rounded-3xl shadow-[0_0_50px_rgba(252,213,53,0.2)]'):
                         ui.label('AI REBALANCING STRATEGY').classes('text-xl md:text-2xl font-black text-[#FCD535] mb-2 tracking-widest')
                         loading_spinner = ui.spinner(size='xl', color='#FCD535').classes('mx-auto my-8')
                         ai_result = ui.markdown('').classes('text-white text-sm md:text-base leading-relaxed')
-                        ui.button('เธฃเธฑเธเธ—เธฃเธฒเธ', on_click=ai_dialog.close).classes('mt-6 w-full bg-white/10 text-white font-black rounded-xl py-3 hover:bg-white/20')
+                        ui.button('รับทราบ', on_click=ai_dialog.close).classes('mt-6 w-full bg-white/10 text-white font-black rounded-xl py-3 hover:bg-white/20')
                     
                     ai_dialog.open()
                     

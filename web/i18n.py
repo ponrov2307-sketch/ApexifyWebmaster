@@ -289,7 +289,7 @@ def tr(key: str, lang: str | None = "TH", **kwargs: Any) -> str:
         return template
 
 
-_CANDIDATE_ENCODINGS: tuple[str, ...] = ("cp874", "latin-1", "cp1252", "cp1251", "cp866")
+_CANDIDATE_ENCODINGS: tuple[str, ...] = ("cp874", "latin-1", "cp1252")
 _CANDIDATE_ERROR_MODES: tuple[str, ...] = ("strict", "ignore", "replace")
 _SUSPICIOUS_MOJIBAKE_TOKENS: tuple[str, ...] = (
     "\u0E42\u20AC",  # โ€
@@ -300,6 +300,8 @@ _SUSPICIOUS_MOJIBAKE_TOKENS: tuple[str, ...] = (
     "Ã",
     "Â",
     "\ufffd",
+    "㹰",
+    "ҹ",
 )
 
 
@@ -316,6 +318,13 @@ def _should_attempt_repair(text: str) -> bool:
     if "\ufffd" in text:
         return True
     if any(token in text for token in _SUSPICIOUS_MOJIBAKE_TOKENS):
+        return True
+
+    # Common Thai mojibake signature: "เธ/เน" mixed with latin-1 supplement bytes.
+    if ("เธ" in text or "เน" in text) and any("\u0080" <= ch <= "\u00ff" for ch in text):
+        return True
+
+    if text.count("เธ") >= 3:
         return True
 
     thai_e = text.count("\u0E40\u0E18")  # เธ
@@ -344,7 +353,6 @@ def _mojibake_score(text: str) -> int:
 
     token_weights: tuple[tuple[str, int], ...] = (
         ("\u0E40\u0E18", 4),  # เธ
-        ("\u0E40\u0E19", 2),  # เน
         ("\u0E42\u20AC", 6),  # โ€
         ("\u0E22\u20AC", 6),  # ย€
         ("\u0E40\u0E19\u20AC\u0E40\u0E18", 6),  # เน€เธ
@@ -359,6 +367,13 @@ def _mojibake_score(text: str) -> int:
         score += 10
     if "??" in text and any(token in text for token in _SUSPICIOUS_MOJIBAKE_TOKENS):
         score += 8
+
+    thai_count = _count_script(text, 0x0E00, 0x0E7F)
+    cyr_count = _count_script(text, 0x0400, 0x04FF)
+    cjk_count = _count_script(text, 0x3400, 0x9FFF)
+    latin_count = sum(1 for ch in text if ("A" <= ch <= "Z") or ("a" <= ch <= "z"))
+    if thai_count == 0 and (cyr_count + cjk_count) >= 4 and latin_count < int(len(text) * 0.45):
+        score += (cyr_count + cjk_count) * 6
 
     return score
 
@@ -384,6 +399,19 @@ def _repair_mojibake(text: str) -> str:
     if not _should_attempt_repair(repaired):
         return _cleanup_candidate(repaired)
 
+    # First pass for Thai mojibake that commonly appears as "เธ...เน...".
+    if ("เธ" in repaired or "เน" in repaired) and any("\u0080" <= ch <= "\u00ff" for ch in repaired):
+        baseline_score = _mojibake_score(repaired)
+        for mode in ("strict", "ignore", "replace"):
+            candidate = _decode_candidate(repaired, "cp874", mode)
+            if not candidate:
+                continue
+            candidate = _cleanup_candidate(candidate)
+            candidate_score = _mojibake_score(candidate)
+            if candidate_score < baseline_score:
+                repaired = candidate
+                break
+
     for _ in range(4):
         baseline = _mojibake_score(repaired)
         best_value = repaired
@@ -396,6 +424,16 @@ def _repair_mojibake(text: str) -> str:
 
                 candidate = _cleanup_candidate(candidate)
                 candidate_score = _mojibake_score(candidate)
+                candidate_thai = _count_script(candidate, 0x0E00, 0x0E7F)
+                candidate_cyr = _count_script(candidate, 0x0400, 0x04FF)
+                candidate_cjk = _count_script(candidate, 0x3400, 0x9FFF)
+                candidate_latin = sum(1 for ch in candidate if ("A" <= ch <= "Z") or ("a" <= ch <= "z"))
+                if (
+                    candidate_thai == 0
+                    and (candidate_cyr + candidate_cjk) >= 4
+                    and candidate_latin < int(len(candidate) * 0.45)
+                ):
+                    continue
                 if candidate_score < best_score or (
                     candidate_score == best_score and len(candidate) > len(best_value)
                 ):
