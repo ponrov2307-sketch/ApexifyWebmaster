@@ -8,6 +8,8 @@ import time
 GLOBAL_PRICE_CACHE = {}
 GLOBAL_SPARKLINE_CACHE = {}
 PRICE_CACHE_TIME = {}
+SPARKLINE_CACHE_TIME = {}
+SPARKLINE_CACHE_TTL = 120
 def update_global_cache_batch(tickers: list):
     """🌟 อัปเดตราคาแบบ Intraday (ทุก 5-15 นาที) เพื่อกราฟ Sparkline ที่ขยับจริง"""
     if not tickers: return
