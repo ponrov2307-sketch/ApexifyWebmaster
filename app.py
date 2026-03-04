@@ -1025,15 +1025,20 @@ async def main_page(client):
             avg_cost = float(item['avg_cost'])
             
             # ?? ดึงราคาแบบ Real-time และกราฟ Sparkline
-            live_price = await run.io_bound(get_live_price, ticker)
-            if live_price is None or float(live_price) <= 0:
+            live_price_raw = await run.io_bound(get_live_price, ticker)
+            try:
+                live_price = float(live_price_raw)
+            except (TypeError, ValueError):
+                live_price = 0.0
+
+            if live_price <= 0:
                 # Price feed fallback: protect dashboard from false drawdown when feed returns 0.
                 last_price = float(avg_cost) if float(avg_cost) > 0 else 0.0
                 price_status = 'fallback_avg_cost'
                 fallback_used = True
                 price_warning_symbols.append(str(ticker))
             else:
-                last_price = float(live_price)
+                last_price = live_price
                 price_status = 'live'
                 fallback_used = False
 
@@ -1559,6 +1564,8 @@ async def main_page(client):
             warning_symbols = view_data.get('price_warning_symbols', []) or []
             if warning_count > 0:
                 symbols_text = ', '.join(str(s) for s in warning_symbols)
+                if warning_count > len(warning_symbols):
+                    symbols_text = f'{symbols_text}, ...' if symbols_text else '...'
                 suffix = f' ({symbols_text})' if symbols_text else ''
                 ui_refs['price_feed_warning'].set_text(
                     f'Price feed delayed for {warning_count} symbols, using Avg Cost temporarily{suffix}'
