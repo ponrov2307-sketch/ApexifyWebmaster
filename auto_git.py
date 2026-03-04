@@ -28,8 +28,8 @@ def auto_push():
             if commit_result.returncode != 0 and "nothing to commit" not in output:
                 raise RuntimeError(commit_result.stderr or commit_result.stdout)
 
-            # Rebase on latest remote and auto-stash any transient local edits.
-            run_git(["pull", "--rebase", "--autostash", "origin", "main"])
+            # Merge remote changes first; avoid interactive editor during pull.
+            run_git(["pull", "--no-rebase", "--no-edit", "--autostash", "origin", "main"])
             run_git(["push", "origin", "main"])
             print(f"[{now}] Cloud Updated! Next sync in 3 minutes...")
         except Exception as e:
