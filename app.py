@@ -501,10 +501,10 @@ async def handle_edit(ticker):
 
             with ui.row().classes('w-full gap-4 flex flex-col sm:flex-row'):
                 with ui.column().classes('flex-1 gap-1 w-full'):
-                    ui.label('Shares (เธเธณเธเธงเธ)').classes('text-xs text-gray-400 font-bold tracking-wider')
+                    ui.label('Shares (จำนวน)').classes('text-xs text-gray-400 font-bold tracking-wider')
                     shares_input = ui.number(value=float(asset['shares']), format='%.6f').classes('w-full').props('outlined dark step=0.01 rounded')
                 with ui.column().classes('flex-1 gap-1 w-full'):
-                    ui.label('Avg Cost (เธ•เนเธเธ—เธธเธ)').classes('text-xs text-gray-400 font-bold tracking-wider')
+                    ui.label('Avg Cost (ต้นทุน)').classes('text-xs text-gray-400 font-bold tracking-wider')
                     cost_input = ui.number(value=float(asset['avg_cost']), format='%.4f').classes('w-full').props('outlined dark step=0.01 rounded')
 
             with ui.row().classes('w-full gap-4 items-end flex flex-col sm:flex-row'):
@@ -789,19 +789,19 @@ def build_trade_plan(asset: dict) -> dict:
     if profit_pct >= 15:
         suggested_action = 'TAKE PROFIT'
         signal = 'SELL-TRIM'
-        reason = 'เธเธณเนเธฃเน€เธฃเธดเนเธกเธชเธนเธ เธเธงเธฃเธ—เธขเธญเธขเธฅเนเธญเธเธเธณเนเธฃ / Profit is extended; scale out gradually.'
+        reason = 'กำไรขยายตัวมากขึ้น ควรทยอยล็อกกำไร / Profit is extended; scale out gradually.'
     elif profit_pct <= -8:
         suggested_action = 'CUT LOSS'
         signal = 'SELL-REDUCE'
-        reason = 'เธเธฒเธ”เธ—เธธเธเน€เธเธดเธ threshold เธเธงเธฃเธเธงเธเธเธธเธกเธเธงเธฒเธกเน€เธชเธตเนเธขเธ / Loss exceeded threshold; control downside risk.'
+        reason = 'ขาดทุนเกิน threshold ควรควบคุมความเสี่ยง / Loss exceeded threshold; control downside risk.'
     elif profit_pct < 5:
         suggested_action = 'WATCH'
         signal = 'WAIT'
-        reason = 'เธขเธฑเธเนเธกเนเธเธฑเธ”เน€เธเธ เธฃเธญเธ”เธนเธ—เธดเธจเธ—เธฒเธ / Range-bound; watch confirmation.'
+        reason = 'ยังไม่ชัดเจน รอดูทิศทาง / Range-bound; watch confirmation.'
     else:
         suggested_action = 'HOLD'
         signal = 'BUY-ON-DIP' if trend_up else 'HOLD'
-        reason = 'เนเธกเน€เธกเธเธ•เธฑเธกเธขเธฑเธเธเธญเธ–เธทเธญเนเธ”เน / Momentum is constructive; continue holding.'
+        reason = 'โมเมนตัมยังเป็นบวก ถือรอต่อได้ / Momentum is constructive; continue holding.'
 
     if current_price <= 0:
         current_price = avg_cost if avg_cost > 0 else 1.0
@@ -3396,3 +3396,4 @@ def run_web() -> None:
 
 if __name__ in {"__main__", "__mp_main__"}:
     run_web()
+

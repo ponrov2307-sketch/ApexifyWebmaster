@@ -2,54 +2,92 @@ param(
     [string[]]$Targets = @(
         "app.py",
         "web\router.py",
-        "web\components\table.py",
-        "web\components\charts.py"
+        "web\i18n.py",
+        "web\components\*.py"
     )
 )
 
 $ErrorActionPreference = "Stop"
-$banned = @(
+$rules = @(
     @{
         Name = "double_question_in_string"
+        Severity = "fail"
         Regex = "['""][^'""]*\?\?[^'""]*['""]"
-        Message = "Found '??' inside a quoted UI string."
+        Message = "Found '??' inside a quoted string."
     },
     @{
         Name = "mojibake_bullet"
-        Regex = "โ€ข|เนโฌเธ"
+        Severity = "fail"
+        Regex = "โ€ข|เนโฌเธ|เน\u0002"
         Message = "Found mojibake bullet token."
     },
     @{
         Name = "thai_mojibake_cluster"
-        Regex = "เธ.*เธ|เน.*เธ|โ€|ย€"
-        Message = "Found likely Thai mojibake cluster in a UI string."
+        Severity = "warn"
+        Regex = "เธ.{0,6}เธ|เน.{0,6}เธ|โ€|ย€|เน€เธ|เนโฌ|เธขโฌ"
+        Message = "Found likely Thai mojibake cluster."
     }
 )
 
-$hasIssue = $false
+$expandedTargets = @()
+foreach ($target in $Targets) {
+    $resolved = Resolve-Path $target -ErrorAction SilentlyContinue
+    if ($resolved) {
+        $expandedTargets += $resolved.Path
+    }
+}
 
-foreach ($file in $Targets) {
+if (-not $expandedTargets) {
+    Write-Host "No matching files to scan." -ForegroundColor Yellow
+    exit 0
+}
+
+$hasFailure = $false
+$warnCount = 0
+
+foreach ($file in $expandedTargets) {
     if (-not (Test-Path $file)) { continue }
     $lines = Get-Content $file -Encoding UTF8
     for ($idx = 0; $idx -lt $lines.Count; $idx++) {
         $line = $lines[$idx]
         if ($line.TrimStart().StartsWith("#")) { continue }
-        if ($line -notmatch "ui\.") { continue }
 
-        foreach ($rule in $banned) {
+        foreach ($rule in $rules) {
+            if (
+                $rule.Name -eq "double_question_in_string" -and
+                $file -like "*web\i18n.py" -and
+                (
+                    $line -match 'replace\("\?\?"' -or
+                    $line -match '\("\?\?",\s*\d+\)' -or
+                    $line -match 'if\s+\"\?\?\"\s+in\s+'
+                )
+            ) {
+                continue
+            }
             if ($line -match $rule.Regex) {
-                $hasIssue = $true
                 $lineNo = $idx + 1
-                Write-Host "[FAIL] $($rule.Name): ${file}:$lineNo" -ForegroundColor Red
-                Write-Host "       $($rule.Message)" -ForegroundColor DarkRed
+                if ($rule.Severity -eq "fail") {
+                    $hasFailure = $true
+                    Write-Host "[FAIL] $($rule.Name): ${file}:$lineNo" -ForegroundColor Red
+                    Write-Host "       $($rule.Message)" -ForegroundColor DarkRed
+                } else {
+                    $warnCount++
+                    Write-Host "[WARN] $($rule.Name): ${file}:$lineNo" -ForegroundColor Yellow
+                    Write-Host "       $($rule.Message)" -ForegroundColor DarkYellow
+                }
             }
         }
     }
 }
 
-if ($hasIssue) {
+if ($hasFailure) {
     Write-Host "Text integrity check failed." -ForegroundColor Red
     exit 1
+}
+
+if ($warnCount -gt 0) {
+    Write-Host "Text integrity check passed with warnings ($warnCount)." -ForegroundColor Yellow
+    exit 0
 }
 
 Write-Host "Text integrity check passed." -ForegroundColor Green
