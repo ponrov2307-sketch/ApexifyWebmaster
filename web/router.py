@@ -144,17 +144,19 @@ def render_apexify_copilot_fab(role: str):
                                     typing.delete()
                                 except RuntimeError:
                                     # The dialog/page may have been closed while the async task was running.
-                                    return
+                                    pass
                         try:
                             with history:
                                 ui.markdown(f'**Copilot:** {resp}').classes('text-sm text-gray-100 bg-[#39C8FF]/10 border border-[#39C8FF]/20 rounded-xl p-2')
                         except RuntimeError:
                             # Ignore UI updates when user already navigated away.
-                            return
+                            pass
+                        finally:
+                            state['sending'] = False
 
                     with ui.row().classes('w-full gap-2'):
                         ui.button('Send', on_click=send_prompt, icon='send').classes('bg-[#20D6A1] text-black font-black rounded-xl px-4')
-                        ui.button('Open Gemini Page', on_click=lambda: ui.navigate.to('/analytics')).props('flat').classes('text-gray-300')
+                        ui.button('Open Gemini Page', on_click=lambda: (copilot_dialog.close(), ui.navigate.to('/analytics'))).props('flat').classes('text-gray-300')
 
     with ui.element('div').classes('fixed bottom-5 right-5 z-[1200]'):
         btn_cls = 'bg-[#20D6A1] text-black hover:scale-105' if is_pro else 'bg-[#FCD535] text-black hover:scale-105'
