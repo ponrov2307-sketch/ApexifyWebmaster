@@ -1,5 +1,14 @@
 ﻿from nicegui import ui, app, run
-from core.config import APP_HOST, APP_PORT, APP_RELOAD, APP_TITLE, COLORS, NICEGUI_STORAGE_SECRET
+from core.config import (
+    APP_HOST,
+    APP_PORT,
+    APP_RELOAD,
+    APP_TITLE,
+    COLORS,
+    NICEGUI_STORAGE_SECRET,
+    FEATURE_PHASE_B_SIGNALS,
+    FEATURE_UPSELL_TRACKING,
+)
 import random
 import pandas as pd
 from datetime import datetime, UTC
@@ -714,7 +723,7 @@ def build_trade_plan(asset: dict) -> dict:
         confidence -= 12
     confidence = max(20, min(92, int(round(confidence))))
 
-    return {
+    plan = {
         'ticker': ticker,
         'current_price': current_price,
         'avg_cost': avg_cost,
@@ -731,6 +740,35 @@ def build_trade_plan(asset: dict) -> dict:
         'confidence': confidence,
         'reason': reason,
     }
+    if not FEATURE_PHASE_B_SIGNALS:
+        plan['entry_low'] = current_price
+        plan['entry_high'] = current_price
+        plan['target_price_2'] = plan['target_price']
+        plan['rr_ratio'] = 1.0
+        plan['position_risk_pct'] = 1.0
+        plan['confidence'] = 50
+    return plan
+
+
+def track_upsell_event(source: str) -> None:
+    if not FEATURE_UPSELL_TRACKING:
+        return
+    key = str(source or 'unknown').strip().lower()
+    try:
+        counters = app.storage.client.get('upsell_events', {})
+        counters[key] = int(counters.get(key, 0)) + 1
+        app.storage.client['upsell_events'] = counters
+    except Exception:
+        pass
+    try:
+        print(f"📈 Upsell click: {key}")
+    except Exception:
+        pass
+
+
+def go_payment_with_tracking(source: str) -> None:
+    track_upsell_event(source)
+    ui.navigate.to('/payment')
 
 
 def compute_portfolio_health(assets: list) -> dict:
@@ -1186,7 +1224,7 @@ async def main_page(client):
                     with ui.column().classes('w-full gap-3 bg-[#0B0E14]/70 border border-white/5 rounded-2xl p-4'):
                         with ui.row().classes('w-full items-center justify-between flex-wrap gap-2'):
                             ui.label('🔒 PRO PREVIEW').classes('text-sm font-black text-[#FCD535] tracking-widest')
-                            ui.button('UNLOCK FULL TRADE PLAN', on_click=lambda: ui.navigate.to('/payment')).classes('bg-[#FCD535] text-black font-black px-4 py-2 rounded-full text-[10px] shadow-lg hover:scale-105')
+                            ui.button('UNLOCK FULL TRADE PLAN', on_click=lambda: go_payment_with_tracking('trade_plan_unlock')).classes('bg-[#FCD535] text-black font-black px-4 py-2 rounded-full text-[10px] shadow-lg hover:scale-105')
 
                         if teaser_assets:
                             for asset in teaser_assets:
@@ -1194,7 +1232,8 @@ async def main_page(client):
                                 bias = 'Bullish' if plan['suggested_action'] in ['HOLD', 'TAKE PROFIT'] else 'Defensive'
                                 with ui.row().classes('w-full justify-between items-center rounded-xl bg-white/5 border border-white/10 px-3 py-2'):
                                     ui.label(plan['ticker']).classes('text-sm font-black text-white')
-                                    ui.label(f"{plan['signal']} • C{plan['confidence']}").classes('text-[10px] font-bold text-gray-300')
+                                    teaser_text = f"{plan['signal']} • C{plan['confidence']}" if FEATURE_PHASE_B_SIGNALS else f"Bias: {bias}"
+                                    ui.label(teaser_text).classes('text-[10px] font-bold text-gray-300')
                         else:
                             ui.label('ยังไม่มี holdings สำหรับ preview').classes('text-xs text-gray-400')
                     return
@@ -1238,17 +1277,22 @@ async def main_page(client):
                                     ui.label(f'Current {curr_sym}{current_price:,.2f} • Avg {curr_sym}{avg_cost:,.2f}').classes('text-[11px] text-gray-500 font-bold')
                                 with ui.column().classes('items-end gap-1'):
                                     ui.label(suggested_action).classes(f'text-[10px] font-black tracking-widest px-3 py-1 rounded-full border {txt_class} {badge_class}')
-                                    ui.label(f'{signal} • C{confidence}').classes('text-[9px] text-gray-400 font-black')
+                                    if FEATURE_PHASE_B_SIGNALS:
+                                        ui.label(f'{signal} • C{confidence}').classes('text-[9px] text-gray-400 font-black')
 
                             with ui.row().classes('w-full justify-between items-center gap-3 flex-wrap'):
                                 pnl_class = 'text-[#32D74B]' if profit_pct >= 0 else 'text-[#FF453A]'
                                 ui.label(f'Profit {profit_pct:+.2f}%').classes(f'text-sm font-black {pnl_class}')
-                                ui.label(f'Entry {curr_sym}{entry_low:,.2f}-{curr_sym}{entry_high:,.2f}').classes('text-xs text-[#39C8FF] font-bold')
-                                ui.label(f'TP1 {curr_sym}{target_price:,.2f}').classes('text-xs text-[#32D74B] font-bold')
-                                ui.label(f'TP2 {curr_sym}{target_price_2:,.2f}').classes('text-xs text-[#20D6A1] font-bold')
-                                ui.label(f'SL {curr_sym}{stop_loss_price:,.2f}').classes('text-xs text-[#FF453A] font-bold')
-                                ui.label(f'R:R {rr_ratio:.2f}').classes('text-xs text-[#FCD535] font-black')
-                                ui.label(f'PosRisk {pos_risk:.1f}%').classes('text-xs text-gray-300 font-black')
+                                if FEATURE_PHASE_B_SIGNALS:
+                                    ui.label(f'Entry {curr_sym}{entry_low:,.2f}-{curr_sym}{entry_high:,.2f}').classes('text-xs text-[#39C8FF] font-bold')
+                                    ui.label(f'TP1 {curr_sym}{target_price:,.2f}').classes('text-xs text-[#32D74B] font-bold')
+                                    ui.label(f'TP2 {curr_sym}{target_price_2:,.2f}').classes('text-xs text-[#20D6A1] font-bold')
+                                    ui.label(f'SL {curr_sym}{stop_loss_price:,.2f}').classes('text-xs text-[#FF453A] font-bold')
+                                    ui.label(f'R:R {rr_ratio:.2f}').classes('text-xs text-[#FCD535] font-black')
+                                    ui.label(f'PosRisk {pos_risk:.1f}%').classes('text-xs text-gray-300 font-black')
+                                else:
+                                    ui.label(f'Target {curr_sym}{target_price:,.2f}').classes('text-xs text-[#32D74B] font-bold')
+                                    ui.label(f'Stop {curr_sym}{stop_loss_price:,.2f}').classes('text-xs text-[#FF453A] font-bold')
 
                             ui.label(reason).classes('text-xs text-gray-400 leading-relaxed')
 
@@ -1291,8 +1335,9 @@ async def main_page(client):
                 with ui.column().classes('w-full gap-2 rounded-2xl bg-[#0B0E14]/70 border border-white/10 p-4'):
                     ui.label(f'Issue: {teaser_issue}').classes('text-sm text-gray-300 font-bold')
                     ui.label(f'Action: {teaser_action}').classes('text-xs text-gray-400')
-                    ui.label('Phase B unlock: Entry/Exit signals + Position sizing + Confidence scoring').classes('text-[10px] text-[#39C8FF] font-bold')
-                    ui.button('UNLOCK FULL HEALTH DIAGNOSIS', on_click=lambda: ui.navigate.to('/payment')).classes('bg-[#FCD535] text-black font-black rounded-full px-5 py-2 text-xs w-full md:w-auto')
+                    if FEATURE_PHASE_B_SIGNALS:
+                        ui.label('Phase B unlock: Entry/Exit signals + Position sizing + Confidence scoring').classes('text-[10px] text-[#39C8FF] font-bold')
+                        ui.button('UNLOCK FULL HEALTH DIAGNOSIS', on_click=lambda: go_payment_with_tracking('health_score_unlock')).classes('bg-[#FCD535] text-black font-black rounded-full px-5 py-2 text-xs w-full md:w-auto')
                 return
 
                 with ui.row().classes('w-full gap-2 flex-wrap'):
