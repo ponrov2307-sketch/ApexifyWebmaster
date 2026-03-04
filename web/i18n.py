@@ -289,17 +289,48 @@ def tr(key: str, lang: str | None = "TH", **kwargs: Any) -> str:
         return template
 
 
-_CANDIDATE_ENCODINGS: tuple[str, ...] = ("cp874", "latin-1", "cp1252")
+_CANDIDATE_ENCODINGS: tuple[str, ...] = ("cp874", "latin-1", "cp1252", "cp1251", "cp866")
 _CANDIDATE_ERROR_MODES: tuple[str, ...] = ("strict", "ignore", "replace")
 _SUSPICIOUS_MOJIBAKE_TOKENS: tuple[str, ...] = (
-    "\u0E40\u0E18",  # เธ
-    "\u0E40\u0E19",  # เน
     "\u0E42\u20AC",  # โ€
     "\u0E22\u20AC",  # ย€
+    "\u0E40\u0E19\u20AC\u0E40\u0E18",  # เน€เธ
+    "\u0E40\u0E19\u00C2",
+    "\u0E40\u0E18\u00C2",
     "Ã",
     "Â",
     "\ufffd",
 )
+
+
+def _count_script(text: str, start: int, end: int) -> int:
+    return sum(1 for ch in text if start <= ord(ch) <= end)
+
+
+def _should_attempt_repair(text: str) -> bool:
+    if not isinstance(text, str) or not text:
+        return False
+
+    if any("\u0080" <= ch <= "\u009f" for ch in text):
+        return True
+    if "\ufffd" in text:
+        return True
+    if any(token in text for token in _SUSPICIOUS_MOJIBAKE_TOKENS):
+        return True
+
+    thai_combo = text.count("\u0E40\u0E18") + text.count("\u0E40\u0E19")  # เธ / เน
+    if len(text) >= 24 and thai_combo >= 6 and (thai_combo / max(len(text), 1)) > 0.12:
+        return True
+
+    thai_count = _count_script(text, 0x0E00, 0x0E7F)
+    cyr_count = _count_script(text, 0x0400, 0x04FF)
+    cjk_count = _count_script(text, 0x3400, 0x9FFF)
+    latin_count = sum(1 for ch in text if ("A" <= ch <= "Z") or ("a" <= ch <= "z"))
+
+    if (cyr_count + cjk_count) >= 8 and thai_count == 0 and latin_count < (len(text) * 0.35):
+        return True
+
+    return False
 
 
 def _mojibake_score(text: str) -> int:
@@ -348,6 +379,9 @@ def _repair_mojibake(text: str) -> str:
     repaired = str(text)
     if not repaired:
         return repaired
+    if not _should_attempt_repair(repaired):
+        return _cleanup_candidate(repaired)
+
     for _ in range(4):
         baseline = _mojibake_score(repaired)
         best_value = repaired
