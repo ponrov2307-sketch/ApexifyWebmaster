@@ -1524,8 +1524,9 @@ async def main_page(client):
                 )
 
         with ui.row().classes('w-full justify-between items-center mt-6 mb-2 border-b border-white/5 pb-2 flex-wrap gap-2'):
-            with ui.row().classes('items-center gap-2'):
-                ui.label('YOUR HOLDINGS').classes('ax-section-title')
+            ui.label('YOUR HOLDINGS').classes('ax-section-title')
+
+            with ui.row().classes('items-center gap-2 flex-wrap justify-end'):
                 ui.label('Portfolio Filter').classes('text-[10px] text-gray-400 font-bold tracking-widest uppercase')
                 ui.select(['ALL', 'DCA', 'TRADING', 'DIV'], value=d['current_group'], on_change=change_portfolio_group).classes('w-28 text-xs').props('outlined dark dense behavior="menu"')
                 ui_refs['filtered_count_badge'] = ui.label(
@@ -1534,19 +1535,19 @@ async def main_page(client):
                     'text-[10px] font-black px-2 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10'
                 )
 
-            with ui.row().classes('gap-2 bg-white/5 p-1 rounded-lg border border-white/10 shadow-inner'):
-                def set_sort(key):
-                    if app.storage.client.get('sort_key') == key:
-                        app.storage.client['sort_desc'] = not app.storage.client.get('sort_desc', False)
-                    else:
-                        app.storage.client['sort_key'] = key
-                        app.storage.client['sort_desc'] = True 
-                    trigger_sort_refresh()
+                with ui.row().classes('gap-2 bg-white/5 p-1 rounded-lg border border-white/10 shadow-inner'):
+                    def set_sort(key):
+                        if app.storage.client.get('sort_key') == key:
+                            app.storage.client['sort_desc'] = not app.storage.client.get('sort_desc', False)
+                        else:
+                            app.storage.client['sort_key'] = key
+                            app.storage.client['sort_desc'] = True 
+                        trigger_sort_refresh()
 
-                btn_class = 'text-[10px] font-bold tracking-wider px-3 py-1 text-gray-400 hover:text-white transition-colors'
-                ui.button('A-Z', icon='sort_by_alpha', on_click=lambda: set_sort('ticker')).props('flat dense size=sm').classes(btn_class)
-                ui.button('PROFIT', icon='percent', on_click=lambda: set_sort('profit_pct')).props('flat dense size=sm').classes(btn_class)
-                ui.button('VALUE', icon='attach_money', on_click=lambda: set_sort('total_value')).props('flat dense size=sm').classes(btn_class)
+                    btn_class = 'text-[10px] font-bold tracking-wider px-3 py-1 text-gray-400 hover:text-white transition-colors'
+                    ui.button('A-Z', icon='sort_by_alpha', on_click=lambda: set_sort('ticker')).props('flat dense size=sm').classes(btn_class)
+                    ui.button('PROFIT', icon='percent', on_click=lambda: set_sort('profit_pct')).props('flat dense size=sm').classes(btn_class)
+                    ui.button('VALUE', icon='attach_money', on_click=lambda: set_sort('total_value')).props('flat dense size=sm').classes(btn_class)
 
         ui_refs['price_feed_warning'] = ui.label('').classes(
             'text-[10px] md:text-xs font-bold text-[#FCD535] bg-[#FCD535]/10 border border-[#FCD535]/20 rounded-xl px-3 py-2'

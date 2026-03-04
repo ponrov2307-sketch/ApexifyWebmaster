@@ -171,8 +171,8 @@ def create_portfolio_table(assets: list, on_edit, on_news, on_chart, ui_refs: di
                     ui_refs[f'prof_{ticker}'] = ui.label(pnl_string).classes('tabular-nums text-xs md:text-sm font-bold px-2 py-0.5 rounded-md').style(f'color: {profit_color}; background-color: {profit_color}10;')
 
                     # เธเธฅเธธเนเธกเธเธธเนเธกเธเธ” 
-                    with ui.row().classes('gap-1 mt-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300'):
-                        ui.button(icon='bar_chart', on_click=lambda t=ticker: on_chart(t)).props('flat dense round size=sm').classes('text-gray-400 hover:text-[#D0FD3E] bg-white/5')
+                    with ui.row().classes('gap-1 mt-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:pointer-events-none md:group-hover:pointer-events-auto transition-opacity duration-300'):
+                        ui.button(icon='candlestick_chart', on_click=lambda t=ticker: on_chart(t)).props('flat dense round size=sm').classes('text-gray-400 hover:text-[#D0FD3E] bg-white/5')
                         if is_pro_ai:
                             ui.button(icon='psychology', on_click=lambda t=ticker: on_news(t)).props('flat dense round size=sm').classes('text-[#D0FD3E] bg-[#D0FD3E]/10')
                         else:
