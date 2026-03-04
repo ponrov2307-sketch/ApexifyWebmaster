@@ -1,6 +1,7 @@
 from nicegui import ui, app, run
 from web.auth import logout, require_login
 from core.models import get_user_by_telegram 
+from web.i18n import tr
 from functools import wraps
 import inspect
 from datetime import datetime, UTC
@@ -38,17 +39,18 @@ def _pulse_age_label(updated_at):
 
 
 def render_mini_market_pulse_sidebar(pulse):
+    lang = app.storage.user.get('lang', 'TH')
     with ui.column().classes('w-full mt-5 bg-[#0E1C24]/80 border border-white/10 rounded-2xl p-3 gap-2 shadow-inner'):
-        ui.label('MARKET PULSE').classes('text-[9px] text-[#39C8FF] font-black tracking-widest uppercase')
+        ui.label(tr('router.market_pulse', lang)).classes('text-[9px] text-[#39C8FF] font-black tracking-widest uppercase')
         with ui.row().classes('w-full justify-between items-center'):
             lbl_fg = ui.label('Fear&Greed --').classes('text-xs font-black')
-            lbl_fg_status = ui.label('Loading').classes('text-[10px] text-gray-400 font-bold')
+            lbl_fg_status = ui.label(tr('router.loading', lang)).classes('text-[10px] text-gray-400 font-bold')
         with ui.row().classes('w-full justify-between items-center'):
             ui.label('VIX').classes('text-[10px] text-gray-500 font-bold uppercase')
             lbl_vix = ui.label('--').classes('text-xs font-black')
         with ui.row().classes('w-full justify-between items-center mt-1'):
-            lbl_age = ui.label('Updated ...').classes('text-[9px] text-gray-500')
-            ui.button('Macro HUD', on_click=lambda: ui.navigate.to('/macro')).props('flat dense size=xs').classes('text-[#39C8FF] bg-[#39C8FF]/10 rounded-full px-2')
+            lbl_age = ui.label(tr('router.updated_initial', lang)).classes('text-[9px] text-gray-500')
+            ui.button(tr('router.macro_hud', lang), on_click=lambda: ui.navigate.to('/macro')).props('flat dense size=xs').classes('text-[#39C8FF] bg-[#39C8FF]/10 rounded-full px-2')
 
         async def refresh_pulse():
             current = app.storage.client.get('sidebar_pulse') or pulse or {}
@@ -95,27 +97,32 @@ def render_mini_market_pulse_sidebar(pulse):
             lbl_fg_status.set_text(fg_label)
             lbl_vix.set_text(f'{vix:,.2f}')
             lbl_vix.style(f'color: {vix_color};')
-            lbl_age.set_text(f'Updated {age}')
+            lbl_age.set_text(tr('router.updated_age', lang, age=age))
 
         ui.timer(0.2, refresh_pulse, once=True)
         ui.timer(45.0, refresh_pulse)
 
 
-def render_apexify_copilot_fab(role: str):
+def render_apexify_copilot_fab(role: str, lang: str = 'TH'):
     is_pro = str(role).lower() in ['pro', 'vip', 'admin']
     with ui.dialog() as copilot_dialog, ui.card().classes('w-[92vw] max-w-[420px] h-[68vh] max-h-[640px] bg-[#0B1320]/95 border border-[#39C8FF]/30 rounded-3xl p-0 overflow-hidden'):
         with ui.column().classes('w-full h-full gap-0'):
             with ui.row().classes('w-full items-center justify-between px-4 py-3 border-b border-white/10'):
-                ui.label('APEXIFY COPILOT').classes('text-sm font-black tracking-widest text-[#39C8FF]')
+                ui.label(tr('copilot.title', lang)).classes('text-sm font-black tracking-widest text-[#39C8FF]')
                 ui.button(icon='close', on_click=copilot_dialog.close).props('flat round dense').classes('text-gray-400')
             with ui.column().classes('w-full h-full p-3 gap-3'):
                 history = ui.column().classes('w-full flex-1 overflow-y-auto gap-2 pr-1')
-                prompt_input = ui.textarea(placeholder='ถาม AI เช่น "วิเคราะห์ TSLA ล่าสุดแบบสั้นๆ"').props('outlined dark dense autogrow').classes('w-full')
+                prompt_input = ui.textarea(
+                    placeholder=tr('copilot.placeholder', lang)
+                ).props('outlined dark dense autogrow').classes('w-full')
 
                 if not is_pro:
                     with history:
-                        ui.markdown('**Copilot is a PRO/VIP feature.**\n\nอัปเกรดเพื่อใช้ AI บนเว็บแบบสดทันที').classes('text-sm text-gray-300')
-                    ui.button('UPGRADE TO PRO', on_click=lambda: ui.navigate.to('/payment')).classes('w-full bg-[#FCD535] text-black font-black rounded-xl py-2')
+                        ui.markdown(tr('copilot.upgrade_body', lang)).classes('text-sm text-gray-300')
+                    ui.button(
+                        tr('copilot.upgrade_btn', lang),
+                        on_click=lambda: ui.navigate.to('/payment')
+                    ).classes('w-full bg-[#FCD535] text-black font-black rounded-xl py-2')
                 else:
                     state = {'sending': False}
                     async def send_prompt():
@@ -132,7 +139,7 @@ def render_apexify_copilot_fab(role: str):
                             typing = ui.row().classes('items-center gap-2 text-xs text-gray-400')
                             with typing:
                                 ui.spinner(size='sm', color='#39C8FF')
-                                ui.label('Copilot is thinking...')
+                                ui.label(tr('copilot.thinking', lang))
                         try:
                             from services.gemini_ai import generate_copilot_reply
                             resp = await run.io_bound(generate_copilot_reply, q, str(role).lower())
@@ -155,18 +162,18 @@ def render_apexify_copilot_fab(role: str):
                             state['sending'] = False
 
                     with ui.row().classes('w-full gap-2'):
-                        ui.button('Send', on_click=send_prompt, icon='send').classes('bg-[#20D6A1] text-black font-black rounded-xl px-4')
-                        ui.button('Open Gemini Page', on_click=lambda: (copilot_dialog.close(), ui.navigate.to('/gemini'))).props('flat').classes('text-gray-300')
+                        ui.button(tr('copilot.send', lang), on_click=send_prompt, icon='send').classes('bg-[#20D6A1] text-black font-black rounded-xl px-4')
+                        ui.button(tr('copilot.open_gemini', lang), on_click=lambda: (copilot_dialog.close(), ui.navigate.to('/gemini'))).props('flat').classes('text-gray-300')
 
     with ui.element('div').classes('fixed bottom-5 right-5 z-[1200]'):
         btn_cls = 'bg-[#20D6A1] text-black hover:scale-105' if is_pro else 'bg-[#FCD535] text-black hover:scale-105'
-        ui.button('Apexify Copilot', icon='smart_toy', on_click=copilot_dialog.open).classes(f'{btn_cls} rounded-full px-5 py-3 font-black shadow-[0_12px_30px_rgba(0,0,0,0.45)] transition-transform')
+        ui.button(tr('copilot.fab', lang), icon='smart_toy', on_click=copilot_dialog.open).classes(f'{btn_cls} rounded-full px-5 py-3 font-black shadow-[0_12px_30px_rgba(0,0,0,0.45)] transition-transform')
 
 
 def create_layout():
     if 'drawer_open' not in app.storage.user: app.storage.user['drawer_open'] = False 
         
-    # 🌟 Sidebar ล้ำยุค (เหมือนเดิม)
+    # Sidebar layout
     drawer = ui.left_drawer(fixed=True).classes('bg-gradient-to-b from-[#07121C]/95 to-[#060B12]/95 backdrop-blur-3xl p-4 w-64 border-r border-[#56D3FF]/12 shadow-[20px_0_50px_rgba(0,0,0,0.5)] z-50 transition-all duration-300').bind_value(app.storage.user, 'drawer_open')
     
     tid = app.storage.user.get('telegram_id')
@@ -179,68 +186,71 @@ def create_layout():
             ui.icon('rocket_launch', size='md').classes('text-[#D0FD3E] drop-shadow-[0_0_15px_rgba(208,253,62,0.6)] animate-pulse')
             ui.label('APEXIFY').classes('text-2xl font-black text-white tracking-[0.2em]')
 
-        ui.label('MAIN MENU' if lang == 'EN' else 'เมนูหลัก').classes('text-[9px] text-gray-500 font-black mb-2 tracking-widest uppercase pl-2')
+        ui.label(tr('router.main_menu', lang)).classes('text-[9px] text-gray-500 font-black mb-2 tracking-widest uppercase pl-2')
         with ui.button(on_click=lambda: ui.navigate.to('/')).props('flat ripple=false').classes('w-full justify-start text-[#D0FD3E] bg-[#D0FD3E]/10 border border-[#D0FD3E]/20 rounded-2xl mb-2 transition-all shadow-inner py-3 overflow-hidden'):
             ui.icon('dashboard', size='sm').classes('drop-shadow-md')
-            ui.label('Dashboard').classes('ml-2 font-black tracking-wide')
+            ui.label(tr('router.menu.dashboard', lang)).classes('ml-2 font-black tracking-wide')
 
         ui.element('div').classes('w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent my-6')
-        ui.label('PRO TOOLS' if lang == 'EN' else 'เครื่องมือ PRO').classes('text-[9px] text-gray-500 font-black mb-2 tracking-widest uppercase pl-2')
+        ui.label(tr('router.pro_tools', lang)).classes('text-[9px] text-gray-500 font-black mb-2 tracking-widest uppercase pl-2')
         
         pro_menus = [
-            ('bar_chart', 'Analytics', '/analytics', ['pro', 'vip', 'admin']),
-            ('favorite', 'AI Matchmaker', '/matchmaker', ['pro', 'vip', 'admin']),
-            ('attach_money', 'Dividend', '/dividend', ['pro', 'vip', 'admin']),
-            ('grid_on', 'Heatmap', '/heatmap', ['pro', 'vip', 'admin']),
-            ('trending_up', '2-Stock Simulator', '/sp500', ['pro', 'vip', 'admin']),
-            ('notifications_active', 'Price Alerts', '/alerts', ['pro', 'vip', 'admin']),
-            ('download', 'Export', '/export', ['pro', 'vip', 'admin']),
-            ('workspace_premium', 'Upgrade PRO', '/payment', ['free', 'pro', 'vip', 'admin'])
+            ('bar_chart', 'router.menu.analytics', '/analytics', ['pro', 'vip', 'admin']),
+            ('favorite', 'router.menu.matchmaker', '/matchmaker', ['pro', 'vip', 'admin']),
+            ('attach_money', 'router.menu.dividend', '/dividend', ['pro', 'vip', 'admin']),
+            ('grid_on', 'router.menu.heatmap', '/heatmap', ['pro', 'vip', 'admin']),
+            ('trending_up', 'router.menu.simulator', '/sp500', ['pro', 'vip', 'admin']),
+            ('notifications_active', 'router.menu.alerts', '/alerts', ['pro', 'vip', 'admin']),
+            ('download', 'router.menu.export', '/export', ['pro', 'vip', 'admin']),
+            ('workspace_premium', 'router.menu.upgrade', '/payment', ['free', 'pro', 'vip', 'admin'])
         ]
         
-        for icon, name, link, req_roles in pro_menus:
+        for icon, name_key, link, req_roles in pro_menus:
             is_locked = role not in req_roles
-            def nav(l=link, locked=is_locked, n=name):
-                if locked: ui.notify(f'🔒 ฟีเจอร์ {n} สำหรับ PRO อัปเกรดเพื่อปลดล็อก!', type='warning')
+            display_name = tr(name_key, lang)
+
+            def nav(l=link, locked=is_locked, n=display_name):
+                if locked:
+                    ui.notify(tr('router.feature_locked', lang, feature=n), type='warning')
                 else: ui.navigate.to(l)
 
-            btn_class = 'text-[#FFD700] bg-[#FFD700]/10 border border-[#FFD700]/30 hover:bg-[#FFD700]/20' if name == 'Upgrade PRO' else 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+            btn_class = 'text-[#FFD700] bg-[#FFD700]/10 border border-[#FFD700]/30 hover:bg-[#FFD700]/20' if name_key == 'router.menu.upgrade' else 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
             with ui.button(on_click=nav).props('flat ripple=false').classes(f'w-full justify-start {btn_class} rounded-2xl mb-1.5 transition-all relative py-2.5 group overflow-hidden'):
                 ui.icon(icon, size='sm').classes('group-hover:scale-110 transition-transform')
-                ui.label(name).classes('ml-2 font-bold tracking-wide')
+                ui.label(display_name).classes('ml-2 font-bold tracking-wide')
                 if is_locked: ui.icon('lock', size='xs').classes('absolute right-4 text-[#FFD700]')
 
         render_mini_market_pulse_sidebar(app.storage.client.get('sidebar_pulse'))
 
-    # 🌟 Header แบบกระจกใส พร้อมปุ่มต่างๆ
+    # Header section
     with ui.header().classes('w-full h-16 bg-gradient-to-r from-[#060B12]/88 via-[#0A1724]/88 to-[#060B12]/88 backdrop-blur-2xl border-b border-[#56D3FF]/12 p-4 flex justify-between items-center z-50 fixed'):
-        # ฝั่งซ้าย (เมนูแฮมเบอร์เกอร์ + โลโก้มือถือ)
+        # Left side (menu + mobile logo)
         with ui.row().classes('items-center gap-2'):
             ui.button(icon='menu', on_click=drawer.toggle).props('flat dense round').classes('text-gray-400 hover:text-[#D0FD3E] transition-colors')
             with ui.row().classes('items-center gap-2 cursor-pointer ml-2 md:hidden').on('click', lambda: ui.navigate.to('/')):
                 ui.icon('rocket_launch', size='xs').classes('text-[#D0FD3E]')
                 ui.label('APEX').classes('text-lg font-black text-white tracking-widest')
                 
-# 🌟 ฝั่งขวา (ปุ่มฟังก์ชันต่างๆ)
+        # Right side actions
         with ui.row().classes('items-center gap-2 md:gap-4'):
             
-            # 1. ปุ่มไปหน้าเว็บไซต์หลัก 
-            # ใช้ gt-xs เพื่อโชว์ในคอม และ xs เพื่อโชว์ในมือถือ
-            ui.button('MAIN SITE', icon='language', on_click=lambda: ui.navigate.to('https://apexify.co', new_tab=True)).props('flat size=sm').classes('text-gray-400 hover:text-white font-bold tracking-widest border border-white/10 rounded-full px-3 py-1 hover:bg-white/5 gt-xs')
+            # 1) Main site buttons
+            # Show full button on desktop and icon-only on mobile
+            ui.button(tr('router.main_site', lang), icon='language', on_click=lambda: ui.navigate.to('https://apexify.co', new_tab=True)).props('flat size=sm').classes('text-gray-400 hover:text-white font-bold tracking-widest border border-white/10 rounded-full px-3 py-1 hover:bg-white/5 gt-xs')
             
             ui.button(icon='language', on_click=lambda: ui.navigate.to('https://apexify.co', new_tab=True)).props('flat round size=sm').classes('text-gray-400 hover:text-white border border-white/10 hover:bg-white/5 xs')
 
-            # 2. ปุ่มสลับภาษา (TH / EN)
+            # 2) Language switcher (TH / EN)
             def toggle_lang():
                 app.storage.user['lang'] = 'EN' if app.storage.user.get('lang', 'TH') == 'TH' else 'TH'
                 ui.navigate.reload()
             curr_lang = app.storage.user.get('lang', 'TH')
             ui.button(curr_lang, on_click=toggle_lang).props('flat round size=sm').classes('text-[#D0FD3E] font-black w-8 h-8 border border-[#D0FD3E]/30 bg-[#D0FD3E]/10 hover:bg-[#D0FD3E]/20 text-xs transition-all')
 
-            # 4. ปุ่ม Logout
+            # 4) Logout button
             ui.button(icon='power_settings_new', on_click=logout).props('flat round size=sm').classes('text-gray-500 hover:text-[#FF453A] hover:bg-[#FF453A]/10 transition-colors ml-1 md:ml-0')
 
-    render_apexify_copilot_fab(role)
+    render_apexify_copilot_fab(role, lang)
 
 def standard_page_frame(content_func):
     @wraps(content_func)

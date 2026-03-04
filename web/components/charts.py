@@ -1,5 +1,6 @@
 from nicegui import ui, app
 from core.models import get_user_by_telegram
+from web.i18n import tr
 import yfinance as yf
 import pandas as pd
 
@@ -14,6 +15,7 @@ async def show_candlestick_chart(ticker: str):
     user_info = get_user_by_telegram(tid) if tid else {}
     role = str(user_info.get('role', 'free')).lower()
     is_paid_user = role in ['vip', 'pro', 'admin']
+    lang = str(app.storage.user.get('lang', 'TH')).upper()
 
     def fetch_dynamic_data(symbol, period, interval):
         try:
@@ -132,7 +134,7 @@ async def show_candlestick_chart(ticker: str):
                 def change_timeframe(interval_code, period_code, active_btn):
                     if not is_paid_user and interval_code in ['1wk', '1mo']:
                         ui.notify(
-                            'Locked timeframe (1W, 1M) is available for VIP/PRO only.',
+                            tr('charts.locked_timeframe', lang),
                             type='warning',
                         )
                         return
@@ -149,13 +151,20 @@ async def show_candlestick_chart(ticker: str):
 
                     raw_data = fetch_dynamic_data(ticker, period_code, interval_code)
                     if not raw_data:
-                        set_status(
-                            f'Data feed unavailable for {ticker} ({interval_code}). '
-                            'Please try another timeframe or retry later.'
+                        status_message = tr(
+                            'charts.data_feed_unavailable',
+                            lang,
+                            ticker=ticker,
+                            interval=interval_code,
                         )
-                        render_empty_chart('Data feed unavailable\nPlease retry in a moment')
+                        set_status(
+                            status_message
+                        )
+                        render_empty_chart(
+                            tr('charts.data_feed_unavailable_short', lang)
+                        )
                         ui.notify(
-                            f'Unable to load chart data for {ticker} ({interval_code})',
+                            tr('charts.load_failed', lang, ticker=ticker, interval=interval_code),
                             type='warning',
                         )
                         return
