@@ -1089,6 +1089,14 @@ async def main_page(client):
         unique_price_warnings = list(dict.fromkeys(price_warning_symbols))
         price_warning_count = len(unique_price_warnings)
         price_warning_symbols_preview = unique_price_warnings[:3]
+        if price_warning_count > 0:
+            logger.warning(
+                'dashboard_price_fallback user_id=%s group=%s count=%s symbols=%s',
+                user_id,
+                current_group,
+                price_warning_count,
+                ','.join(str(s) for s in price_warning_symbols_preview),
+            )
         
         top_gainer = profit_sorted[0] if profit_sorted and profit_sorted[0]['profit_pct'] > 0 else None
         top_loser = profit_sorted[-1] if profit_sorted and profit_sorted[-1]['profit_pct'] < 0 else None
