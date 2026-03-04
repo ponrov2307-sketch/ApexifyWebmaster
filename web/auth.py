@@ -1,16 +1,24 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
 
+import jwt
 from nicegui import app, ui
+from jwt import ExpiredSignatureError, InvalidTokenError
 
 from core.config import (
+    AUTH_ALLOW_TOKEN_LOGIN,
     AUTH_LOCK_MINUTES,
     AUTH_MAX_ATTEMPTS,
     AUTH_MODE,
     AUTH_SESSION_MINUTES,
     AUTH_SHARED_PASSCODE,
+    DASHBOARD_LOGIN_SECRET,
 )
 from core.models import get_user_by_telegram
+
+logger = logging.getLogger(__name__)
+_last_token_login_error = "invalid"
 
 
 def _get_failed_attempts() -> int:
@@ -56,6 +64,88 @@ def _password_hint() -> str:
     return "Auth mode is not configured."
 
 
+def _mask_telegram_id(tid: str) -> str:
+    raw = str(tid or "").strip()
+    if len(raw) <= 4:
+        return "****"
+    return f"{raw[:2]}***{raw[-2:]}"
+
+
+def get_token_login_error() -> str:
+    return _last_token_login_error
+
+
+def _verify_dashboard_token(token: str) -> dict | None:
+    global _last_token_login_error
+    _last_token_login_error = "invalid"
+
+    if not AUTH_ALLOW_TOKEN_LOGIN:
+        _last_token_login_error = "disabled"
+        return None
+    if not DASHBOARD_LOGIN_SECRET:
+        _last_token_login_error = "misconfigured"
+        return None
+
+    raw_token = (token or "").strip()
+    if not raw_token:
+        return None
+
+    try:
+        payload = jwt.decode(
+            raw_token,
+            DASHBOARD_LOGIN_SECRET,
+            algorithms=["HS256"],
+            options={"require": ["exp"]},
+        )
+    except ExpiredSignatureError:
+        _last_token_login_error = "expired"
+        return None
+    except InvalidTokenError:
+        _last_token_login_error = "invalid"
+        return None
+
+    tid = payload.get("telegram_id") or payload.get("tid")
+    if tid is None:
+        _last_token_login_error = "invalid"
+        return None
+
+    tid_str = str(tid).strip()
+    if not tid_str:
+        _last_token_login_error = "invalid"
+        return None
+
+    _last_token_login_error = "ok"
+    return {"telegram_id": tid_str}
+
+
+def _login_user_from_telegram_id(tid: str) -> bool:
+    tid_str = str(tid or "").strip()
+    if not tid_str:
+        return False
+
+    try:
+        tid_int = int(tid_str)
+    except ValueError:
+        return False
+
+    user = get_user_by_telegram(tid_int)
+    if not user:
+        logger.info("token_login_invalid telegram_id=%s reason=user_not_found", _mask_telegram_id(tid_str))
+        return False
+
+    _reset_attempt_state()
+    app.storage.user["authenticated"] = True
+    app.storage.user["auth_at"] = datetime.now(UTC).isoformat()
+    app.storage.user["telegram_id"] = tid_str
+    app.storage.user["user_id"] = user["user_id"]
+
+    if "currency" not in app.storage.user:
+        app.storage.user["currency"] = "USD"
+    if "lang" not in app.storage.user:
+        app.storage.user["lang"] = "TH"
+    return True
+
+
 def login_page():
     with ui.column().classes("absolute inset-0 items-center justify-center"):
         ui.element("div").classes(
@@ -74,6 +164,7 @@ def login_page():
             telegram_id_input = ui.input("Telegram ID").classes("w-full mb-3").props("outlined dark")
             password_input = ui.input("Password").classes("w-full mb-2").props("outlined dark password type=password")
             ui.label(_password_hint()).classes("text-[11px] text-amber-300 mb-6 text-center")
+            ui.label("เปิดจากปุ่มใน Telegram bot เพื่อ login อัตโนมัติ").classes("text-[11px] text-cyan-300 mb-4 text-center")
 
             def try_login():
                 if _is_locked():
