@@ -390,7 +390,7 @@ async def handle_add_asset():
                     if not t: ui.notify('กรุณาใส่ชื่อหุ้น', type='warning'); return
                     a = float(alert_input.value or 0)
                     if add_portfolio_stock(user_id, t, float(shares_input.value or 0), float(cost_input.value or 0), group_select.value):
-                        if a > 0: set_user_price_alert(user_id, t, a, '>' if a > get_live_price(t) else '<')
+                        if a > 0: set_user_price_alert(user_id, t, a, 'above' if a > get_live_price(t) else 'below')
                         ui.notify(f'เพิ่ม {t} สำเร็จ', type='positive')
                         ui.run_javascript('window.location.reload()')
                 ui.button('Confirm', on_click=save_new).classes('w-full sm:flex-[2] bg-[#FCD535] text-black font-bold py-3 rounded-lg hover:bg-[#E5C02A] transition-colors')
@@ -534,7 +534,7 @@ async def handle_edit(ticker):
                     # [ไฮไลท์สำคัญ] บันทึกการตั้งเตือนลงตารางของ Telegram อัตโนมัติ
                     if new_alert > 0:
                         # ถ้าราคาที่ตั้งเตือน สูงกว่า ราคาปัจจุบัน แสดงว่าเตือนตอนราคาเบรกขึ้น (>)
-                        cond = '>' if new_alert > current_price else '<'
+                        cond = 'above' if new_alert > current_price else 'below'
                         set_user_price_alert(user_id, ticker, new_alert, cond)
 
                     ui.notify('บันทึกข้อมูลและซิงค์การแจ้งเตือนสำเร็จ', type='positive')
@@ -1592,7 +1592,7 @@ async def main_page(client):
                                         ui.notify('User session not found for creating alert.', type='warning')
                                         return
                                     try:
-                                        await run.io_bound(set_user_price_alert, str(user_id), sym, float(target), '>')
+                                        await run.io_bound(set_user_price_alert, str(user_id), sym, float(target), 'above')
                                         ui.notify(f'Alert created for {sym} (Target {target:,.2f}). Manage at /alerts', type='positive')
                                     except Exception as e:
                                         ui.notify(f'Unable to create alert: {e}', type='negative')
@@ -2983,12 +2983,36 @@ async def matchmaker_page():
 
                         async def swipe_right():
                             user_id = app.storage.user.get('user_id')
-                            target = float(price) * 1.08
-                            if user_id and target > 0:
-                                await run.io_bound(set_user_price_alert, str(user_id), ticker, target, '>')
+                            if not user_id: return
+                            
+                            tid = app.storage.user.get('telegram_id')
+                            user_info_check = get_user_by_telegram(tid) if tid else {}
+                            current_role = str(user_info_check.get('role', 'free')).lower()
+                            
+                            from core.models import get_user_watch, add_watch
+                            current_watch = get_user_watch(user_id)
+                            curr_len = len(current_watch)
+                            
+                            # เช็คโควต้าแบบเดียวกับบอทเป๊ะๆ
+                            if current_role == 'free' and curr_len >= 3:
+                                ui.notify('FREE โควต้า Watchlist เต็ม (สูงสุด 3 ตัว) สมัคร VIP เพื่อปลดล็อค', type='warning')
+                                return
+                            if current_role == 'vip' and curr_len >= 10:
+                                ui.notify('VIP โควต้า Watchlist เต็ม (สูงสุด 10 ตัว) อัปเกรด PRO เพื่อไม่จำกัด', type='warning')
+                                return
+
+                            add_watch(user_id, ticker) # เพิ่มเข้า Watchlist จริงๆ
+                            
+                            if current_role in ['pro', 'admin']:
+                                target = float(price) * 1.08
+                                # ใช้คำว่า 'above' แทน '>'
+                                await run.io_bound(set_user_price_alert, str(user_id), ticker, target, 'above')
+                                ui.notify(f'✅ เพิ่ม {ticker} ลง Watchlist และตั้ง Alert เตือนทำกำไร', type='positive')
+                            else:
+                                ui.notify(f'✅ เพิ่ม {ticker} ลง Watchlist เรียบร้อย', type='info')
+                                
                             state['liked'] += 1
                             liked_badge.set_text(f"LIKED: {state['liked']}")
-                            ui.notify(f'Added {ticker} to watch alerts at ${target:,.2f}', type='positive')
                             state['index'] += 1
                             await render_card()
 

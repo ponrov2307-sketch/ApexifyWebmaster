@@ -41,7 +41,6 @@ def get_user_by_telegram(telegram_id: int):
     try:
         with get_db_connection() as conn:
             c = conn.cursor()
-            # 🌟 ดึง username ออกมาด้วย
             c.execute("SELECT user_id, status, role, expiry_date, username FROM users WHERE user_id = %s", (str(telegram_id),))
             row = c.fetchone()
             c.close()
@@ -49,16 +48,22 @@ def get_user_by_telegram(telegram_id: int):
         if row:
             expiry = row[3]
             expiry_str = expiry.strftime('%d/%m/%Y') if isinstance(expiry, datetime) else str(expiry) if expiry else None
+            role = row[2] if row[2] else 'free'
             
-            # 🌟 ถ้ามีชื่อใน DB ให้ใช้ชื่อจริง ถ้าไม่มีให้ใช้ User_XXXX
+            # 🌟 เช็ควันหมดอายุแบบ Real-time ให้หน้าเว็บ
+            if role in ['vip', 'pro'] and expiry:
+                try:
+                    exp_dt = datetime.strptime(expiry, '%Y-%m-%d %H:%M:%S') if isinstance(expiry, str) else expiry
+                    if datetime.now() > exp_dt:
+                        role = 'free' # หมดอายุให้กลายเป็นฟรีทันที
+                except: pass
+
             db_username = row[4] if len(row) > 4 and row[4] else f"User_{str(telegram_id)[-4:]}"
             
             return {
-                'user_id': row[0],
-                'username': db_username, 
+                'user_id': row[0], 'username': db_username, 
                 'status': row[1] if row[1] else 'active',
-                'role': row[2] if row[2] else 'free',
-                'vip_expiry': expiry_str 
+                'role': role, 'vip_expiry': expiry_str 
             }
         return None
     except Exception as e:
