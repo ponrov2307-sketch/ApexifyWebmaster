@@ -2,30 +2,41 @@ import subprocess
 import time
 from datetime import datetime
 
+
+def run_git(args, check=True, capture_output=False):
+    return subprocess.run(
+        ["git", *args],
+        check=check,
+        capture_output=capture_output,
+        text=True,
+    )
+
+
 def auto_push():
     while True:
         now = datetime.now().strftime("%H:%M:%S")
-        print(f"[{now}] 🚀 Starting Auto-Sync...")
-        
-        try:
-            # 1. เพิ่มไฟล์ทั้งหมด
-            subprocess.run(["git", "add", "."], check=True)
-            
-            # 2. บันทึกพร้อมเวลา
-            commit_message = f"Auto-sync at {now}"
-            # ใช้ stdout=subprocess.DEVNULL เพื่อไม่ให้ข้อความ git commit รกหน้าจอ
-            subprocess.run(["git", "commit", "-m", commit_message], capture_output=True)
-            
-            # 3. ดันขึ้น GitHub
-            subprocess.run(["git", "push", "origin", "main"], check=True)
-            
-            print(f"[{now}] ✅ Cloud Updated! Next sync in 3 minutes...")
-            
-        except Exception as e:
-            print(f"[{now}] ❌ Sync failed (Check internet or Git status)")
+        print(f"[{now}] Starting Auto-Sync...")
 
-        # ⏳ รอ 180 วินาที (3 นาที)
+        try:
+            run_git(["fetch", "origin"])
+
+            run_git(["add", "."])
+            commit_message = f"Auto-sync at {now}"
+            commit_result = run_git(["commit", "-m", commit_message], check=False, capture_output=True)
+
+            output = f"{commit_result.stdout}\n{commit_result.stderr}".lower()
+            if commit_result.returncode != 0 and "nothing to commit" not in output:
+                raise RuntimeError(commit_result.stderr or commit_result.stdout)
+
+            # Rebase on latest remote and auto-stash any transient local edits.
+            run_git(["pull", "--rebase", "--autostash", "origin", "main"])
+            run_git(["push", "origin", "main"])
+            print(f"[{now}] Cloud Updated! Next sync in 3 minutes...")
+        except Exception as e:
+            print(f"[{now}] Sync failed: {e}")
+
         time.sleep(180)
+
 
 if __name__ == "__main__":
     auto_push()
