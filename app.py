@@ -3364,6 +3364,9 @@ async def gemini_page(client):
         async def send_prompt():
             if state['sending']:
                 return
+            if role not in ['pro', 'admin']:
+                ui.notify(tr('copilot.lock_notice', lang), type='warning')
+                return
             q = (prompt_input.value or '').strip()
             if not q:
                 return
