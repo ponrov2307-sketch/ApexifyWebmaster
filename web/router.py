@@ -122,6 +122,7 @@ def render_apexify_copilot_fab(role: str):
                         if not q:
                             return
                         prompt_input.value = ''
+                        typing = None
                         with history:
                             ui.markdown(f'**You:** {q}').classes('text-sm text-white bg-white/5 rounded-xl p-2')
                             typing = ui.row().classes('items-center gap-2 text-xs text-gray-400')
@@ -133,9 +134,19 @@ def render_apexify_copilot_fab(role: str):
                             resp = await run.io_bound(generate_copilot_reply, q, str(role).lower())
                         except Exception as e:
                             resp = f'AI unavailable: {e}'
-                        typing.delete()
-                        with history:
-                            ui.markdown(f'**Copilot:** {resp}').classes('text-sm text-gray-100 bg-[#39C8FF]/10 border border-[#39C8FF]/20 rounded-xl p-2')
+                        finally:
+                            if typing is not None:
+                                try:
+                                    typing.delete()
+                                except RuntimeError:
+                                    # The dialog/page may have been closed while the async task was running.
+                                    return
+                        try:
+                            with history:
+                                ui.markdown(f'**Copilot:** {resp}').classes('text-sm text-gray-100 bg-[#39C8FF]/10 border border-[#39C8FF]/20 rounded-xl p-2')
+                        except RuntimeError:
+                            # Ignore UI updates when user already navigated away.
+                            return
 
                     with ui.row().classes('w-full gap-2'):
                         ui.button('Send', on_click=send_prompt, icon='send').classes('bg-[#20D6A1] text-black font-black rounded-xl px-4')
