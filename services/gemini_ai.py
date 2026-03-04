@@ -27,7 +27,7 @@ def _looks_unreadable(text: str) -> bool:
     if not text:
         return True
 
-    bad_tokens = ("\u0E40\u0E19\u20AC\u0E40\u0E18", "\u0E42\u20AC", "\u0E22\u20AC", "Ã", "Â", "\ufffd")
+    bad_tokens = ("\u0E40\u0E19\u20AC\u0E40\u0E18", "\u0E42\u20AC", "\u0E22\u20AC", "\u00C3", "\u00C2", "\ufffd")
     bad_score = sum(text.count(token) for token in bad_tokens)
     if bad_score >= 2:
         return True
@@ -51,7 +51,7 @@ def _normalize_ai_text(text: str, fallback: str) -> str:
 
     cleaned = raw
     should_attempt_repair = _looks_unreadable(raw) or any(
-        token in raw for token in ("\u0E40\u0E19\u20AC\u0E40\u0E18", "\u0E42\u20AC", "\u0E22\u20AC", "Ã", "Â", "\ufffd")
+        token in raw for token in ("\u0E40\u0E19\u20AC\u0E40\u0E18", "\u0E42\u20AC", "\u0E22\u20AC", "\u00C3", "\u00C2", "\ufffd")
     )
     if should_attempt_repair:
         try:
