@@ -236,9 +236,9 @@ def create_layout():
             
             # 1) Main site buttons
             # Show full button on desktop and icon-only on mobile
-            ui.button(tr('router.main_site', lang), icon='language', on_click=lambda: ui.navigate.to('https://apexify.co', new_tab=True)).props('flat size=sm').classes('text-gray-400 hover:text-white font-bold tracking-widest border border-white/10 rounded-full px-3 py-1 hover:bg-white/5 gt-xs')
+            ui.button(tr('router.main_site', lang), icon='language', on_click=lambda: ui.navigate.to('https://apexify-bot.vercel.app/', new_tab=True)).props('flat size=sm').classes('text-gray-400 hover:text-white font-bold tracking-widest border border-white/10 rounded-full px-3 py-1 hover:bg-white/5 gt-xs')
             
-            ui.button(icon='language', on_click=lambda: ui.navigate.to('https://apexify.co', new_tab=True)).props('flat round size=sm').classes('text-gray-400 hover:text-white border border-white/10 hover:bg-white/5 xs')
+            ui.button(icon='language', on_click=lambda: ui.navigate.to('https://apexify-bot.vercel.app/', new_tab=True)).props('flat round size=sm').classes('text-gray-400 hover:text-white border border-white/10 hover:bg-white/5 xs')
 
             # 2) Language switcher (TH / EN)
             def toggle_lang():
