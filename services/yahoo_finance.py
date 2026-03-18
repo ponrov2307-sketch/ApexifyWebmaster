@@ -9,7 +9,105 @@ GLOBAL_PRICE_CACHE = {}
 GLOBAL_SPARKLINE_CACHE = {}
 PRICE_CACHE_TIME = {}
 SPARKLINE_CACHE_TIME = {}
-SPARKLINE_CACHE_TTL = 120
+SPARKLINE_CACHE_TTL = 300  # 5 minutes
+PRICE_CACHE_TTL = 60  # 1 minute
+
+# Ticker info cache (name, div_yield, etc.) — longer TTL since it rarely changes
+_TICKER_INFO_CACHE: dict = {}
+_TICKER_INFO_TIME: dict = {}
+_TICKER_INFO_TTL = 600  # 10 minutes
+
+# Popular stocks to preload — prices & sparklines cached on startup + refreshed periodically
+POPULAR_STOCKS = [
+    # US Mega Cap
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK-B", "TSM", "AVGO",
+    "JPM", "V", "MA", "UNH", "JNJ", "WMT", "PG", "XOM", "HD", "COST",
+    "ABBV", "KO", "PEP", "MRK", "LLY", "CVX", "CRM", "ADBE", "NFLX", "AMD",
+    "ORCL", "INTC", "QCOM", "TXN", "CSCO", "IBM", "NOW", "UBER", "ABNB", "SQ",
+    # Growth & Tech
+    "PLTR", "SNOW", "SHOP", "MELI", "SE", "COIN", "RBLX", "DKNG", "ROKU", "NET",
+    "CRWD", "ZS", "PANW", "DDOG", "MDB", "TEAM", "PINS", "SNAP", "TTD", "U",
+    # Dividend & Value
+    "T", "VZ", "MO", "PM", "O", "SCHD", "VYM", "DVY", "JEPI", "KMI",
+    "EPD", "ENB", "BNS", "TD", "RY", "BMO", "CM", "SLF", "MFC", "GWW",
+    # ETFs
+    "SPY", "QQQ", "VOO", "VTI", "IWM", "DIA", "EEM", "GLD", "SLV", "TLT",
+    # Sectors
+    "XLK", "XLV", "XLF", "XLE", "XLY", "XLP", "XLI", "XLU", "XLRE", "XLB", "XLC",
+]
+
+_PRELOAD_DONE = False
+
+def preload_popular_stocks():
+    """Preload prices & sparklines for popular stocks in batch. Called on server startup."""
+    global _PRELOAD_DONE
+    if _PRELOAD_DONE:
+        return
+    print(f"[Preload] Loading {len(POPULAR_STOCKS)} popular stocks...")
+    try:
+        # Batch download prices (daily) — single API call for all tickers
+        now = time.time()
+        data = yf.download(POPULAR_STOCKS, period="5d", interval="1d", progress=False, ignore_tz=True)
+        if not data.empty:
+            for t in POPULAR_STOCKS:
+                try:
+                    if isinstance(data.columns, pd.MultiIndex):
+                        series = data['Close'][t].dropna()
+                    else:
+                        series = data['Close'].dropna()
+                    if len(series) > 0:
+                        price = float(series.iloc[-1])
+                        if price > 0:
+                            GLOBAL_PRICE_CACHE[t] = price
+                            PRICE_CACHE_TIME[t] = now
+                except Exception:
+                    pass
+        print(f"[Preload] Prices loaded: {len(GLOBAL_PRICE_CACHE)} tickers")
+    except Exception as e:
+        print(f"[Preload] Price load error: {e}")
+
+    try:
+        # Batch download sparklines (15min) — single API call
+        spark_data = yf.download(POPULAR_STOCKS, period="5d", interval="15m", progress=False, ignore_tz=True)
+        if not spark_data.empty:
+            for t in POPULAR_STOCKS:
+                try:
+                    if isinstance(spark_data.columns, pd.MultiIndex):
+                        series = spark_data['Close'][t].dropna()
+                    else:
+                        series = spark_data['Close'].dropna()
+                    if len(series) > 0:
+                        closes = [float(c) for c in series.tolist()][-40:]
+                        GLOBAL_SPARKLINE_CACHE[t] = closes
+                        SPARKLINE_CACHE_TIME[t] = now
+                except Exception:
+                    pass
+        print(f"[Preload] Sparklines loaded: {len(GLOBAL_SPARKLINE_CACHE)} tickers")
+    except Exception as e:
+        print(f"[Preload] Sparkline load error: {e}")
+
+    _PRELOAD_DONE = True
+    print(f"[Preload] Done!")
+
+
+# Live USD→THB exchange rate (TTL 5 min)
+_THB_RATE_CACHE: dict = {'rate': 34.5, 'ts': 0.0}
+
+def get_usd_thb_rate() -> float:
+    """ดึงอัตราแลกเปลี่ยน USD→THB แบบเรียลไทม์ผ่าน yfinance (cache 5 นาที)"""
+    now = time.time()
+    if now - _THB_RATE_CACHE['ts'] < 300:
+        return _THB_RATE_CACHE['rate']
+    try:
+        data = yf.download('THB=X', period='5d', interval='1d', progress=False)
+        if not data.empty:
+            price = float(data['Close'].dropna().iloc[-1])
+            if price > 0:
+                _THB_RATE_CACHE['rate'] = price
+                _THB_RATE_CACHE['ts'] = now
+    except Exception:
+        pass
+    return _THB_RATE_CACHE['rate']
 def update_global_cache_batch(tickers: list):
     """🌟 อัปเดตราคาแบบ Intraday (ทุก 5-15 นาที) เพื่อกราฟ Sparkline ที่ขยับจริง"""
     if not tickers: return
@@ -55,25 +153,41 @@ def get_market_summary():
 def get_live_price(ticker: str) -> float:
     now = time.time()
     
-    # 🌟 ถ้าราคาเพิ่งดึงมา "ไม่ถึง 10 วินาที" ค่อยใช้ของเดิม
-    if ticker in GLOBAL_PRICE_CACHE and (now - PRICE_CACHE_TIME.get(ticker, 0)) < 10:
+    # Use cache if recent enough
+    if ticker in GLOBAL_PRICE_CACHE and (now - PRICE_CACHE_TIME.get(ticker, 0)) < PRICE_CACHE_TTL:
         return GLOBAL_PRICE_CACHE[ticker]
         
+    def _extract_price(data, ticker):
+        if data.empty:
+            return None
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                series = data['Close'][ticker].dropna()
+            else:
+                series = data['Close'].dropna()
+            if series.empty:
+                return None
+            return float(series.iloc[-1])
+        except Exception:
+            return None
+
     try:
+        # ลอง 1-minute ก่อน (เร็วและสดที่สุด)
         data = yf.download(ticker, period="1d", interval="1m", progress=False)
-        if data.empty: return GLOBAL_PRICE_CACHE.get(ticker, 0.0)
-        
-        if isinstance(data.columns, pd.MultiIndex):
-            price = float(data['Close'][ticker].dropna().iloc[-1])
-        else:
-            price = float(data['Close'].dropna().iloc[-1])
-            
-        # 🌟 อัปเดตราคาใหม่ และประทับเวลา
+        price = _extract_price(data, ticker)
+
+        # fallback → daily ถ้า 1-minute ไม่มีข้อมูล (เช่น off-market hours)
+        if price is None or price <= 0:
+            data = yf.download(ticker, period="5d", interval="1d", progress=False)
+            price = _extract_price(data, ticker)
+
+        if price is None or price <= 0:
+            return GLOBAL_PRICE_CACHE.get(ticker, 0.0)
+
         GLOBAL_PRICE_CACHE[ticker] = price
         PRICE_CACHE_TIME[ticker] = now
-        
         return price
-    except: 
+    except:
         return GLOBAL_PRICE_CACHE.get(ticker, 0.0)
 
 def get_sparkline_data(ticker: str, days: int = 7):
@@ -120,6 +234,148 @@ def get_sparkline_data(ticker: str, days: int = 7):
         return [], True
     is_up = closes[-1] >= closes[0] if len(closes) > 1 else True
     return closes, is_up
+
+
+def batch_get_prices(tickers: list[str]) -> dict[str, float]:
+    """Fetch prices for multiple tickers in a single yf.download() call."""
+    if not tickers:
+        return {}
+    now = time.time()
+    result = {}
+    need_fetch = []
+
+    for t in tickers:
+        if t in GLOBAL_PRICE_CACHE and (now - PRICE_CACHE_TIME.get(t, 0)) < PRICE_CACHE_TTL:
+            result[t] = GLOBAL_PRICE_CACHE[t]
+        else:
+            need_fetch.append(t)
+
+    if need_fetch:
+        fetched = set()
+        # Try intraday 1-minute first for most accurate live price
+        try:
+            data = yf.download(need_fetch, period="1d", interval="1m", progress=False, ignore_tz=True)
+            if not data.empty:
+                for t in need_fetch:
+                    try:
+                        if len(need_fetch) > 1 and isinstance(data.columns, pd.MultiIndex):
+                            series = data['Close'][t].dropna()
+                        else:
+                            series = data['Close'].dropna()
+                        if len(series) > 0:
+                            price = float(series.iloc[-1])
+                            if price > 0:
+                                GLOBAL_PRICE_CACHE[t] = price
+                                PRICE_CACHE_TIME[t] = now
+                                result[t] = price
+                                fetched.add(t)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Fallback to daily for any tickers not fetched (e.g. off-market hours)
+        still_need = [t for t in need_fetch if t not in fetched]
+        if still_need:
+            try:
+                data = yf.download(still_need, period="5d", interval="1d", progress=False, ignore_tz=True)
+                if not data.empty:
+                    for t in still_need:
+                        try:
+                            if len(still_need) > 1 and isinstance(data.columns, pd.MultiIndex):
+                                series = data['Close'][t].dropna()
+                            else:
+                                series = data['Close'].dropna()
+                            if len(series) > 0:
+                                price = float(series.iloc[-1])
+                                if price > 0:
+                                    GLOBAL_PRICE_CACHE[t] = price
+                                    PRICE_CACHE_TIME[t] = now
+                                    result[t] = price
+                        except Exception:
+                            result[t] = GLOBAL_PRICE_CACHE.get(t, 0.0)
+            except Exception:
+                pass
+
+    # Fill missing
+    for t in tickers:
+        if t not in result:
+            result[t] = GLOBAL_PRICE_CACHE.get(t, 0.0)
+    return result
+
+
+def batch_get_sparklines(tickers: list[str]) -> dict[str, list[float]]:
+    """Fetch sparkline data for multiple tickers in a single call."""
+    if not tickers:
+        return {}
+    now = time.time()
+    result = {}
+    need_fetch = []
+
+    for t in tickers:
+        cached = GLOBAL_SPARKLINE_CACHE.get(t, [])
+        if cached and (now - SPARKLINE_CACHE_TIME.get(t, 0)) < SPARKLINE_CACHE_TTL:
+            result[t] = cached
+        else:
+            need_fetch.append(t)
+
+    if need_fetch:
+        try:
+            data = yf.download(need_fetch, period="5d", interval="15m", progress=False, ignore_tz=True)
+            if not data.empty:
+                for t in need_fetch:
+                    try:
+                        if len(need_fetch) > 1 and isinstance(data.columns, pd.MultiIndex):
+                            series = data['Close'][t].dropna()
+                        else:
+                            series = data['Close'].dropna()
+                        if len(series) > 0:
+                            closes = [float(c) for c in series.tolist()][-40:]
+                            GLOBAL_SPARKLINE_CACHE[t] = closes
+                            SPARKLINE_CACHE_TIME[t] = now
+                            result[t] = closes
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    for t in tickers:
+        if t not in result:
+            result[t] = GLOBAL_SPARKLINE_CACHE.get(t, [])
+    return result
+
+
+def get_ticker_info(ticker: str) -> dict:
+    """Get ticker info (name, div_yield, day_high, etc.) with caching."""
+    now = time.time()
+    if ticker in _TICKER_INFO_CACHE and (now - _TICKER_INFO_TIME.get(ticker, 0)) < _TICKER_INFO_TTL:
+        return _TICKER_INFO_CACHE[ticker]
+    info = {}
+    try:
+        tk = yf.Ticker(ticker)
+        tk_info = tk.info or {}
+        fast = tk.fast_info
+        info = {
+            "name": tk_info.get("shortName", tk_info.get("longName", ticker)),
+            "sector": tk_info.get("sector", "Unknown"),
+            "div_yield": round((tk_info.get("dividendYield", 0) or 0) * 100, 2),
+            "day_high": float(getattr(fast, 'day_high', 0) or 0),
+            "day_low": float(getattr(fast, 'day_low', 0) or 0),
+            "volume": int(getattr(fast, 'last_volume', 0) or 0),
+            "market_cap": int(getattr(fast, 'market_cap', 0) or 0),
+            "pe_ratio": tk_info.get("trailingPE", 0) or 0,
+            "52w_high": tk_info.get("fiftyTwoWeekHigh", 0) or 0,
+            "52w_low": tk_info.get("fiftyTwoWeekLow", 0) or 0,
+            "beta": tk_info.get("beta", 0) or 0,
+            "target_price": tk_info.get("targetMeanPrice", 0) or 0,
+            "recommendation": tk_info.get("recommendationKey", ""),
+        }
+    except Exception:
+        info = {"name": ticker, "div_yield": 0, "day_high": 0, "day_low": 0, "volume": 0, "market_cap": 0}
+    _TICKER_INFO_CACHE[ticker] = info
+    _TICKER_INFO_TIME[ticker] = now
+    return info
+
 
 def get_candlestick_data(ticker: str, period: str = "3mo"):
     try:
@@ -244,25 +500,36 @@ def get_stock_duel_data(ticker_a: str, ticker_b: str, years: int = 10, initial_c
     except Exception:
         return None
 
+_DIV_CACHE: dict = {}
+_DIV_CACHE_TIME: dict = {}
+_DIV_CACHE_TTL = 600  # 10 minutes
+
 def get_real_dividend_data(tickers: list):
+    """Fetch dividend data with caching."""
     dividend_items = {}
-    try:
-        for ticker in tickers:
+    now = time.time()
+    for ticker in tickers:
+        # Check cache
+        if ticker in _DIV_CACHE and (now - _DIV_CACHE_TIME.get(ticker, 0)) < _DIV_CACHE_TTL:
+            dividend_items[ticker] = _DIV_CACHE[ticker]
+            continue
+        try:
             t = yf.Ticker(ticker)
-            info = t.info
-            yield_pct = info.get('dividendYield', 0)
-            yield_pct = (yield_pct * 100) if yield_pct else 0
-            
+            info = t.info or {}
+            yield_pct = (info.get('dividendYield', 0) or 0) * 100
             ex_date_ts = info.get('exDividendDate')
             ex_date = datetime.fromtimestamp(ex_date_ts).strftime('%Y-%m-%d') if ex_date_ts else 'N/A'
-            
-            dividend_items[ticker] = {
+            item = {
                 'yield': yield_pct,
                 'ex_date': ex_date,
                 'amount_per_share': info.get('dividendRate', 0) or 0
             }
-    except Exception as e:
-        print(f"Dividend API Error: {e}")
+            _DIV_CACHE[ticker] = item
+            _DIV_CACHE_TIME[ticker] = now
+            dividend_items[ticker] = item
+        except Exception as e:
+            print(f"Dividend API Error for {ticker}: {e}")
+            dividend_items[ticker] = {'yield': 0, 'ex_date': 'N/A', 'amount_per_share': 0}
     return dividend_items
 
 def _extract_close_series(download_df, ticker: str):
@@ -401,18 +668,17 @@ def get_portfolio_historical_growth(portfolio_items: list, period: str = "1y", i
         }
 
 def get_advanced_stock_info(tickers: list):
-    """ดึงข้อมูล Sector และ Target Price ของจริงจาก Yahoo Finance"""
+    """ดึงข้อมูล Sector และ Target Price using cached ticker info."""
     info_dict = {}
     for ticker in tickers:
         try:
-            t = yf.Ticker(ticker)
-            info = t.info
+            cached = get_ticker_info(ticker)
             info_dict[ticker] = {
-                'sector': info.get('sector', 'Unknown'),
-                'target_price': info.get('targetMeanPrice', 0),
-                'beta': info.get('beta', 1.0)
+                'sector': cached.get('sector', 'Unknown'),
+                'target_price': cached.get('target_price', 0),
+                'beta': cached.get('beta', 1.0)
             }
-        except:
+        except Exception:
             info_dict[ticker] = {'sector': 'Unknown', 'target_price': 0, 'beta': 1.0}
     return info_dict
 
@@ -461,6 +727,67 @@ def calculate_bollinger_bands(prices, period=20, std_dev=2):
     lower = sma - (std * std_dev)
     
     return round(upper, 2).tolist(), round(sma, 2).tolist(), round(lower, 2).tolist()
+
+
+def calculate_rsi_series(closes: list, period: int = 14) -> list:
+    """คำนวณ RSI ทั้ง series สำหรับวาดกราฟ"""
+    n = len(closes)
+    if n < period + 1:
+        return ['-'] * n
+    result = ['-'] * period
+    gains, losses = [], []
+    for i in range(1, n):
+        d = closes[i] - closes[i - 1]
+        gains.append(max(d, 0.0))
+        losses.append(abs(min(d, 0.0)))
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    # First RSI at index=period
+    if avg_loss == 0:
+        result.append(100.0)
+    else:
+        rs = avg_gain / avg_loss
+        result.append(round(100 - 100 / (1 + rs), 2))
+    # Subsequent RSIs
+    for i in range(period, n - 1):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        if avg_loss == 0:
+            result.append(100.0)
+        else:
+            rs = avg_gain / avg_loss
+            result.append(round(100 - 100 / (1 + rs), 2))
+    return result
+
+
+def calculate_macd_series(closes: list, fast: int = 12, slow: int = 26, signal: int = 9):
+    """คำนวณ MACD line, Signal line, Histogram สำหรับวาดกราฟ"""
+    def _ema(data, period):
+        k = 2 / (period + 1)
+        ema_vals = [data[0]]
+        for v in data[1:]:
+            ema_vals.append(v * k + ema_vals[-1] * (1 - k))
+        return ema_vals
+
+    if len(closes) < slow + signal:
+        empty = ['-'] * len(closes)
+        return empty, empty, empty
+
+    fast_ema = _ema(closes, fast)
+    slow_ema = _ema(closes, slow)
+    macd_line = [round(f - s, 4) for f, s in zip(fast_ema, slow_ema)]
+    signal_line_raw = _ema(macd_line[slow - 1:], signal)
+    pad = ['-'] * (slow - 1)
+    signal_line = pad + [round(v, 4) for v in signal_line_raw]
+    hist_pad = ['-'] * (slow + signal - 2)
+    histogram = hist_pad + [
+        round(macd_line[slow - 1 + i] - signal_line_raw[i], 4)
+        for i in range(len(signal_line_raw))
+    ]
+    macd_padded = ['-'] * (slow - 1) + macd_line[slow - 1:]
+    return macd_padded, signal_line, histogram
+
+
 # ==========================================
 # 🌟 REAL DATA FUNCTIONS (ล้าง Mockup)
 # ==========================================
@@ -507,18 +834,36 @@ def get_analyst_target(ticker):
     except:
         return 0.0, 0.0
 
+_SIMPLE_SECTOR_CACHE: dict = {'data': [], 'ts': 0.0}
+
 def get_real_sector_rotation():
-    """เช็คกระแสเงินไหลเข้า Sector ผ่าน ETF ของจริง"""
+    """เช็คกระแสเงินไหลเข้า Sector ผ่าน ETF ของจริง (cached 5 min)"""
+    now = time.time()
+    if _SIMPLE_SECTOR_CACHE['data'] and (now - _SIMPLE_SECTOR_CACHE['ts']) < 300:
+        return _SIMPLE_SECTOR_CACHE['data']
+
     sectors = {'Tech': 'XLK', 'Health': 'XLV', 'Finance': 'XLF', 'Energy': 'XLE', 'Consumer': 'XLY'}
+    syms = list(sectors.values())
     rotation = []
-    for name, sym in sectors.items():
-        try:
-            hist = yf.Ticker(sym).history(period="5d")
-            if len(hist) >= 2:
-                flow = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
-                rotation.append({'sector': name, 'flow_pct': round(flow, 2)})
-        except: continue
+    try:
+        data = yf.download(syms, period="5d", interval="1d", progress=False, ignore_tz=True)
+        for name, sym in sectors.items():
+            try:
+                if isinstance(data.columns, pd.MultiIndex):
+                    close = data['Close'][sym].dropna()
+                else:
+                    close = data['Close'].dropna()
+                if len(close) >= 2:
+                    flow = ((float(close.iloc[-1]) - float(close.iloc[0])) / float(close.iloc[0])) * 100
+                    rotation.append({'sector': name, 'flow_pct': round(flow, 2)})
+            except:
+                continue
+    except:
+        return _SIMPLE_SECTOR_CACHE.get('data', [])
+
     rotation.sort(key=lambda x: x['flow_pct'], reverse=True)
+    _SIMPLE_SECTOR_CACHE['data'] = rotation
+    _SIMPLE_SECTOR_CACHE['ts'] = now
     return rotation
 
 
@@ -675,7 +1020,14 @@ def get_real_drip_backtest(ticker: str, years: int = 10, initial_capital: float 
         return None
 
 
+_SECTOR_ROTATION_CACHE: dict = {'data': [], 'ts': 0.0}
+_SECTOR_ROTATION_TTL = 300  # 5 minutes
+
 def get_real_sector_rotation(window: str = '1mo', sector_map=None):
+    now = time.time()
+    if _SECTOR_ROTATION_CACHE['data'] and (now - _SECTOR_ROTATION_CACHE['ts']) < _SECTOR_ROTATION_TTL:
+        return _SECTOR_ROTATION_CACHE['data']
+
     sectors = sector_map or {
         'Technology': 'XLK',
         'Healthcare': 'XLV',
@@ -689,13 +1041,21 @@ def get_real_sector_rotation(window: str = '1mo', sector_map=None):
         'Materials': 'XLB',
         'Communication': 'XLC',
     }
+
+    # Batch download all sector ETFs at once
+    syms = list(sectors.values())
+    try:
+        data = yf.download(syms, period=window, interval='1d', progress=False, ignore_tz=True)
+    except Exception:
+        return _SECTOR_ROTATION_CACHE.get('data', [])
+
     result = []
     for name, sym in sectors.items():
         try:
-            hist = yf.Ticker(sym).history(period=window, interval='1d', auto_adjust=True)
-            if hist.empty or len(hist) < 2:
-                continue
-            close = hist['Close'].dropna()
+            if isinstance(data.columns, pd.MultiIndex):
+                close = data['Close'][sym].dropna()
+            else:
+                close = data['Close'].dropna()
             if len(close) < 2:
                 continue
             flow_pct = ((float(close.iloc[-1]) - float(close.iloc[0])) / float(close.iloc[0])) * 100
@@ -712,4 +1072,7 @@ def get_real_sector_rotation(window: str = '1mo', sector_map=None):
     result.sort(key=lambda x: x['flow_pct'], reverse=True)
     for i, item in enumerate(result, start=1):
         item['rank'] = i
+
+    _SECTOR_ROTATION_CACHE['data'] = result
+    _SECTOR_ROTATION_CACHE['ts'] = now
     return result

@@ -105,14 +105,47 @@ def create_portfolio_table(assets: list, on_edit, on_news, on_chart, ui_refs: di
             empty_subtitle = str(empty_state.get("subtitle") or tr("table.empty.subtitle", lang))
             empty_cta = str(empty_state.get("cta") or "")
             with ui.column().classes(
-                "w-full items-center justify-center p-12 bg-[#12161E]/50 "
-                "backdrop-blur-md rounded-[24px] border border-white/5 border-dashed"
+                "w-full items-center justify-center p-10 md:p-14 relative overflow-hidden "
+                "bg-[#0D1117] rounded-[28px] border border-dashed border-white/8"
             ):
-                ui.icon("inventory_2", size="4xl").classes("text-gray-600 mb-4")
-                ui.label(empty_title).classes("text-lg text-gray-400 font-bold text-center")
-                ui.label(empty_subtitle).classes("text-sm text-gray-500 text-center")
+                ui.element("div").classes(
+                    "absolute top-0 left-1/2 -translate-x-1/2 w-[350px] h-[200px] "
+                    "rounded-full blur-[80px] bg-[#D0FD3E]/5 pointer-events-none"
+                )
+                ui.element("div").classes(
+                    "absolute bottom-0 right-0 w-[200px] h-[200px] "
+                    "rounded-full blur-[70px] bg-[#00BFFF]/4 pointer-events-none"
+                )
+                with ui.element("div").classes(
+                    "w-16 h-16 rounded-2xl flex items-center justify-center mb-5 "
+                    "bg-gradient-to-br from-[#D0FD3E]/10 to-[#D0FD3E]/3 "
+                    "border border-[#D0FD3E]/15 "
+                    "shadow-[0_0_30px_rgba(208,253,62,0.1)] relative z-10"
+                ):
+                    ui.icon("rocket_launch", size="1.9rem").classes("text-[#D0FD3E]/70")
+                ui.label(empty_title).classes(
+                    "text-lg md:text-xl font-black text-gray-300 text-center tracking-wide relative z-10"
+                )
+                ui.label(empty_subtitle).classes(
+                    "text-sm text-gray-500 text-center mt-1 relative z-10"
+                )
+                with ui.column().classes("mt-6 gap-2 w-full max-w-xs relative z-10"):
+                    for step_num, step_text in [
+                        ("1", "เปิด Telegram Bot แล้วกด /start"),
+                        ("2", "ส่งคำสั่ง /add ตามด้วย ticker และราคา"),
+                        ("3", "รีเฟรชหน้านี้เพื่อดูพอร์ต"),
+                    ]:
+                        with ui.row().classes("items-center gap-3"):
+                            with ui.element("div").classes(
+                                "w-6 h-6 rounded-full bg-[#D0FD3E]/15 border border-[#D0FD3E]/25 "
+                                "flex items-center justify-center shrink-0"
+                            ):
+                                ui.label(step_num).classes("text-[10px] font-black text-[#D0FD3E]")
+                            ui.label(step_text).classes("text-xs text-gray-500")
                 if empty_cta:
-                    ui.label(empty_cta).classes("text-xs text-[#D0FD3E] font-bold text-center mt-2")
+                    ui.label(empty_cta).classes(
+                        "text-xs text-[#D0FD3E]/70 font-bold text-center mt-4 relative z-10"
+                    )
             return
 
         for asset in assets:

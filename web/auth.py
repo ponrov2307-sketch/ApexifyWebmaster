@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
+from pathlib import Path
 
 import jwt
 from nicegui import app, ui
@@ -158,70 +159,138 @@ def login_with_dashboard_credentials(telegram_id: str, password: str) -> bool:
 
 
 def login_page():
-    with ui.column().classes("absolute inset-0 items-center justify-center"):
+    with ui.column().classes("absolute inset-0 items-center justify-center bg-[#080B10]"):
+        # Atmospheric glows
         ui.element("div").classes(
-            "absolute top-10 left-1/2 -translate-x-1/2 w-[560px] h-[560px] rounded-full blur-[120px] bg-[#56D3FF]/16 pointer-events-none"
+            "absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[420px] "
+            "rounded-full blur-[140px] bg-[#D0FD3E]/7 pointer-events-none"
         )
+        ui.element("div").classes(
+            "absolute bottom-0 left-0 w-[450px] h-[450px] "
+            "rounded-full blur-[110px] bg-[#00BFFF]/5 pointer-events-none"
+        )
+        ui.element("div").classes(
+            "absolute top-1/3 right-0 w-[350px] h-[350px] "
+            "rounded-full blur-[110px] bg-[#AF52DE]/4 pointer-events-none"
+        )
+
         with ui.card().classes(
-            "w-[94vw] max-w-[430px] p-8 md:p-10 items-center bg-[#0E1822]/92 border border-[#56D3FF]/24 rounded-[28px] shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl relative overflow-hidden"
+            "w-[94vw] max-w-[420px] p-0 bg-[#0D1117] rounded-[24px] overflow-hidden relative "
+            "shadow-[0_0_0_1px_rgba(208,253,62,0.15),0_50px_100px_rgba(0,0,0,0.8)]"
         ):
+            # Top accent line
             ui.element("div").classes(
-                "absolute -top-24 -right-24 w-64 h-64 rounded-full blur-3xl bg-[#7EF7CF]/12 pointer-events-none"
+                "absolute top-0 left-0 right-0 h-[2px] "
+                "bg-gradient-to-r from-transparent via-[#D0FD3E]/50 to-transparent"
             )
-            ui.icon("shield_lock", size="3.2rem").classes("text-[#56D3FF] mb-2 z-10")
-            ui.label("APEXIFY LOGIN").classes("text-3xl font-black text-white tracking-widest text-center z-10")
-            ui.label("Sign in with your Telegram ID").classes("text-gray-400 text-sm mt-1 mb-6 z-10")
+            # Inner top glow
+            ui.element("div").classes(
+                "absolute -top-16 left-1/2 -translate-x-1/2 w-[280px] h-[160px] "
+                "rounded-full blur-[50px] bg-[#D0FD3E]/8 pointer-events-none"
+            )
 
-            telegram_id_input = ui.input("Telegram ID").classes("w-full mb-3").props("outlined dark")
-            password_input = ui.input("Password").classes("w-full mb-2").props("outlined dark password type=password")
-            ui.label(_password_hint()).classes("text-[11px] text-amber-300 mb-6 text-center")
-            ui.label("เปิดจากปุ่มใน Telegram bot เพื่อ login อัตโนมัติ").classes("text-[11px] text-cyan-300 mb-4 text-center")
-
-            def try_login():
-                if _is_locked():
-                    ui.notify(
-                        f"Too many attempts. Try again in {AUTH_LOCK_MINUTES} minute(s).",
-                        type="negative",
+            with ui.column().classes("w-full p-9 items-center gap-0 relative z-10"):
+                # Logo
+                _logo_path = Path(__file__).parent.parent / 'static' / 'apexify-logo.png'
+                if _logo_path.exists():
+                    ui.image("/static/apexify-logo.png").classes(
+                        "w-20 h-20 rounded-full object-contain mb-2 "
+                        "shadow-[0_0_30px_rgba(208,253,62,0.15)]"
                     )
-                    return
+                else:
+                    with ui.element("div").classes(
+                        "w-[60px] h-[60px] rounded-2xl flex items-center justify-center mb-4 "
+                        "bg-gradient-to-br from-[#D0FD3E]/15 to-[#D0FD3E]/5 "
+                        "border border-[#D0FD3E]/25 "
+                        "shadow-[0_0_24px_rgba(208,253,62,0.2)]"
+                    ):
+                        ui.icon("auto_graph", size="2rem").classes("text-[#D0FD3E]")
 
-                try:
-                    tid_str = (telegram_id_input.value or "").strip()
-                    tid = int(tid_str)
-                    pwd = (password_input.value or "").strip()
+                ui.label("APEXIFY").classes(
+                    "text-[2rem] font-black tracking-[0.35em] text-white leading-none"
+                )
+                ui.label("PORTFOLIO DASHBOARD").classes(
+                    "text-[9px] font-bold tracking-[0.4em] text-[#D0FD3E]/50 mt-1"
+                )
+                ui.element("div").classes(
+                    "w-14 h-px bg-gradient-to-r from-transparent via-[#D0FD3E]/30 to-transparent my-5"
+                )
+                ui.label("Sign in with your Telegram account").classes(
+                    "text-gray-500 text-[13px] mb-5 text-center"
+                )
 
-                    if not _verify_password(tid_str, pwd):
-                        _record_failed_attempt()
-                        ui.notify("Invalid credentials", type="negative")
+                telegram_id_input = (
+                    ui.input("Telegram ID", placeholder="Your Telegram ID number")
+                    .classes("w-full mb-3")
+                    .props("outlined dark")
+                )
+                password_input = (
+                    ui.input("Password", placeholder="Enter password")
+                    .classes("w-full mb-3")
+                    .props("outlined dark password type=password")
+                )
+
+                with ui.row().classes("w-full justify-between items-start mb-5 flex-wrap gap-1"):
+                    ui.label(_password_hint()).classes(
+                        "text-[11px] text-[#FCD535]/60 leading-snug max-w-[60%]"
+                    )
+                    ui.label("หรือเปิดจาก Telegram bot").classes(
+                        "text-[11px] text-[#00BFFF]/60 text-right"
+                    )
+
+                def try_login():
+                    if _is_locked():
+                        ui.notify(
+                            f"Too many attempts. Try again in {AUTH_LOCK_MINUTES} minute(s).",
+                            type="negative",
+                        )
                         return
 
-                    user = get_user_by_telegram(tid)
-                    if user:
-                        _reset_attempt_state()
-                        app.storage.user["authenticated"] = True
-                        app.storage.user["auth_at"] = datetime.now(UTC).isoformat()
-                        app.storage.user["telegram_id"] = str(tid)
-                        app.storage.user["user_id"] = user["user_id"]
+                    try:
+                        tid_str = (telegram_id_input.value or "").strip()
+                        tid = int(tid_str)
+                        pwd = (password_input.value or "").strip()
 
-                        if "currency" not in app.storage.user:
-                            app.storage.user["currency"] = "USD"
-                        if "lang" not in app.storage.user:
-                            app.storage.user["lang"] = "TH"
+                        if not _verify_password(tid_str, pwd):
+                            _record_failed_attempt()
+                            ui.notify("Invalid credentials", type="negative")
+                            return
 
-                        role = user.get("role", "free")
-                        role_str = role.upper() if role else "FREE"
-                        ui.notify(f"Login success ({role_str})", type="positive")
-                        ui.navigate.to("/")
-                    else:
+                        user = get_user_by_telegram(tid)
+                        if user:
+                            _reset_attempt_state()
+                            app.storage.user["authenticated"] = True
+                            app.storage.user["auth_at"] = datetime.now(UTC).isoformat()
+                            app.storage.user["telegram_id"] = str(tid)
+                            app.storage.user["user_id"] = user["user_id"]
+
+                            if "currency" not in app.storage.user:
+                                app.storage.user["currency"] = "USD"
+                            if "lang" not in app.storage.user:
+                                app.storage.user["lang"] = "TH"
+
+                            role = user.get("role", "free")
+                            role_str = role.upper() if role else "FREE"
+                            ui.notify(f"Login success ({role_str})", type="positive")
+                            ui.navigate.to("/")
+                        else:
+                            _record_failed_attempt()
+                            ui.notify("Telegram ID not found. Please start bot first.", type="negative")
+                    except ValueError:
                         _record_failed_attempt()
-                        ui.notify("Telegram ID not found. Please start bot first.", type="negative")
-                except ValueError:
-                    _record_failed_attempt()
-                    ui.notify("Telegram ID must be numeric", type="negative")
+                        ui.notify("Telegram ID must be numeric", type="negative")
 
-            ui.button("LOGIN", on_click=try_login).classes(
-                "w-full bg-gradient-to-r from-[#20D6A1] to-[#39C8FF] text-black font-black rounded-xl py-3 hover:scale-[1.01] transition-transform"
-            )
+                ui.button("SIGN IN", on_click=try_login).props("unelevated").classes(
+                    "w-full font-black tracking-[0.2em] text-sm rounded-xl transition-all"
+                ).style(
+                    "background: #D0FD3E !important; color: #080B10 !important; "
+                    "box-shadow: 0 0 20px rgba(208,253,62,0.3); "
+                    "letter-spacing: 0.2em;"
+                )
+
+                ui.label("APEXIFY © 2025").classes(
+                    "text-[10px] text-gray-700 mt-6 tracking-[0.25em]"
+                )
 
 
 def require_login():

@@ -71,7 +71,7 @@ def _generate_text(prompt: str) -> str:
     if not ai_client:
         raise RuntimeError("AI service is not configured")
     response = ai_client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3-flash-preview",
         contents=prompt,
     )
     return (response.text or "").strip()
@@ -147,6 +147,123 @@ User question:
         return f"AI error: {e}"
 
 
+def _generate_matchmaker_batch(exclude_tickers: set[str], batch_size: int = 30, style: str = "mixed") -> list[dict]:
+    """Generate one batch of stock recommendations."""
+    import random
+
+    exclude_desc = ", ".join(sorted(exclude_tickers)) if exclude_tickers else "none"
+    seed = f"{random.choice(['alpha','bravo','charlie','delta','echo','foxtrot','golf','hotel','india','juliet','kilo','lima','mike','november','oscar','papa','quebec','romeo','sierra','tango'])}-{random.randint(1000,9999)}"
+
+    style_hints = {
+        "mixed": "Mix large-cap blue chips, growth stocks, dividend plays, hidden gems, REITs, ETFs, and international ADRs.",
+        "growth": "Focus on growth stocks: tech, biotech, fintech, AI, cloud, EV, clean energy. Include mid-caps and small-caps.",
+        "dividend": "Focus on dividend stocks: utilities, REITs, consumer staples, telecoms, banks. Yield > 2% preferred.",
+        "value": "Focus on value/hidden gems: undervalued mid-caps, international ADRs, niche sectors, turnaround plays.",
+    }
+
+    prompt = f"""
+You are an AI stock matchmaker for Apexify investment platform. Seed: {seed}
+
+Generate exactly {batch_size} diverse stock recommendations for investors.
+DO NOT include any of these tickers: {exclude_desc}
+
+Style: {style_hints.get(style, style_hints['mixed'])}
+
+Return ONLY a valid JSON array. No markdown, no extra text.
+Each item must have exactly these fields:
+[
+  {{"ticker": "AAPL", "name": "Apple Inc", "reason": "short reason in Thai", "sector": "Technology", "match_score": 90}}
+]
+
+Rules:
+- match_score: 60-99 (vary realistically)
+- reason: 1 sentence in Thai explaining investment appeal
+- Cover many different sectors
+- Be creative — include unexpected/lesser-known picks
+- All tickers must be valid US-listed symbols
+- Do NOT repeat any ticker in the list
+"""
+    try:
+        text = _generate_text(prompt)
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        recs = json.loads(cleaned)
+        if isinstance(recs, list):
+            return [r for r in recs if r.get("ticker", "").upper() not in exclude_tickers]
+        return []
+    except Exception as e:
+        logger.error(f"Matchmaker batch AI error: {e}")
+        return []
+
+
+def generate_matchmaker_pool(exclude_tickers: set[str] | None = None) -> list[dict]:
+    """Generate a shared pool of ~100 diverse stock recommendations (4 batches of 25)."""
+    if not ai_client:
+        return []
+
+    import random
+
+    exclude = set(exclude_tickers or set())
+    all_recs: list[dict] = []
+    seen_tickers: set[str] = set(exclude)
+
+    # Generate 4 batches with different styles to get ~100 unique stocks
+    for style in ["mixed", "growth", "dividend", "value"]:
+        batch = _generate_matchmaker_batch(seen_tickers, batch_size=25, style=style)
+        for rec in batch:
+            ticker = rec.get("ticker", "").upper()
+            if ticker and ticker not in seen_tickers:
+                all_recs.append(rec)
+                seen_tickers.add(ticker)
+
+    random.shuffle(all_recs)
+    logger.info(f"Matchmaker pool generated: {len(all_recs)} stocks")
+    return all_recs
+
+
+def generate_morning_briefing(market_summary: str) -> str:
+    """Generate AI morning briefing for PRO users."""
+    if not ai_client:
+        return "AI system is unavailable (missing API key)."
+
+    prompt = f"""
+You are Apexify Morning Briefing AI.
+Create a concise daily market briefing based on this data:
+{market_summary}
+
+Output as Markdown with these sections:
+
+## 🌅 สรุปตลาดวันนี้
+2-3 sentences about overall market sentiment and key moves.
+
+## 📊 จุดสำคัญ
+3-5 bullet points with key observations (indices, sectors, commodities).
+
+## ⚠️ สิ่งที่ต้องระวัง
+2-3 risk factors or events to watch today.
+
+## 💡 คำแนะนำวันนี้
+2-3 actionable suggestions for the day.
+
+Rules:
+- Thai first, practical, risk-first, concise
+- Use emojis for visual scanning
+- No return guarantees
+- Keep under 300 words
+"""
+    try:
+        text = _generate_text(prompt)
+        fallback = (
+            "## 🌅 สรุปตลาดวันนี้\n"
+            "ไม่สามารถสร้างสรุปได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง\n"
+        )
+        return _normalize_ai_text(text, fallback)
+    except Exception as e:
+        logger.error(f"Morning briefing AI error: {e}")
+        return f"Morning briefing error: {e}"
+
+
 def generate_stock_matchmaker_pitch(ticker: str, price: float, trend_up: bool) -> str:
     """Short AI teaser for stock swipe cards."""
     if not ai_client:
@@ -186,7 +303,7 @@ def analyze_payment_slip(image_bytes) -> str:
 """
     try:
         response = ai_client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             contents=[
                 prompt,
                 {"mime_type": "image/jpeg", "data": image_bytes},
@@ -211,14 +328,24 @@ You are Apexify Portfolio Strategist.
 Analyze this portfolio summary and propose a rebalance plan:
 {portfolio_summary}
 
-Output must be Markdown only with:
-1) Short diagnosis (2-4 lines)
-2) Table columns exactly:
-| Asset (Ticker) | Current % | Target % | Action | Reason |
-3) Short execution notes (2-4 bullets)
+Output must be Markdown only with these sections:
 
-Action must be one of: Buy, Hold, Reduce.
-Use Thai first. Keep concise and practical. Risk-first.
+## 📊 วิเคราะห์ภาพรวม
+Short diagnosis (2-4 lines) about overall portfolio health.
+
+## 📋 แผนปรับสมดุล
+Table columns exactly:
+| 📌 สินทรัพย์ | ⚖️ สัดส่วนปัจจุบัน | 🎯 เป้าหมาย | ⚡ Action | 💡 เหตุผล |
+
+Use emoji for Action column:
+- 🟢 Buy = ซื้อเพิ่ม
+- 🟡 Hold = ถือต่อ
+- 🔴 Reduce = ลดสัดส่วน
+
+## ✅ สิ่งที่ควรทำ
+2-4 actionable bullet points with emoji prefixes.
+
+Use Thai language. Keep concise, practical, risk-first.
 """
     try:
         text = _generate_text(prompt)

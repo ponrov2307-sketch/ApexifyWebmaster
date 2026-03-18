@@ -1,4 +1,5 @@
 ﻿from nicegui import ui, app, run
+from pathlib import Path
 import logging
 from core.config import (
     APP_HOST,
@@ -34,6 +35,7 @@ from services.yahoo_finance import (
     get_drip_projection,
     get_real_drip_backtest,
     get_real_sector_rotation,
+    get_usd_thb_rate,
 )
 from services.news_fetcher import fetch_stock_news_summary
 from services.gemini_ai import generate_apexify_report
@@ -1126,7 +1128,7 @@ async def main_page(client):
         user_info = await run.io_bound(get_user_by_telegram, telegram_id) if telegram_id else {}
 
         curr_sym = '฿' if currency == 'THB' else '$'
-        curr_rate = 34.5 if currency == 'THB' else 1.0
+        curr_rate = get_usd_thb_rate() if currency == 'THB' else 1.0
 
         t_welcome = tr('dashboard.welcome', lang)
         t_status = tr('dashboard.status.ready', lang)
@@ -1671,6 +1673,79 @@ async def main_page(client):
                 d.get('role', 'FREE'),
             )
 
+        # ==========================================
+        # PORTFOLIO VALUE HISTORY (30-Day Mini Chart)
+        # ==========================================
+        with ui.column().classes('w-full mt-3 bg-[#12161E]/60 backdrop-blur-xl border border-white/5 p-4 md:p-5 rounded-[24px] shadow-lg gap-2'):
+            with ui.row().classes('w-full justify-between items-center flex-wrap gap-2'):
+                with ui.column().classes('gap-0'):
+                    ui.label('PORTFOLIO VALUE HISTORY').classes('text-[10px] md:text-xs font-black text-[#39C8FF] tracking-widest uppercase')
+                    ui.label('30 วันย้อนหลัง · เปรียบเทียบกับ SPY').classes('text-[9px] text-gray-500 font-bold')
+                hist_period_select = ui.select(['1M', '3M', '6M', '1Y'], value='1M').props('outlined dense dark').classes('w-20 text-xs')
+
+            hist_chart_container = ui.element('div').classes('w-full h-[200px] md:h-[240px] relative')
+
+            async def load_hist_chart(period_val='1M'):
+                period_map = {'1M': '1mo', '3M': '3mo', '6M': '6mo', '1Y': '1y'}
+                hist = await run.io_bound(
+                    get_portfolio_historical_growth,
+                    d.get('sorted_assets', []),
+                    period_map.get(period_val, '1mo'),
+                    '1d',
+                    'SPY',
+                )
+                hist_chart_container.clear()
+                with hist_chart_container:
+                    labels = hist.get('labels', [])
+                    p_values = hist.get('portfolio_values', [])
+                    b_values = hist.get('benchmark_values', [])
+                    p_metrics = hist.get('portfolio_metrics', {})
+                    if not labels or not p_values:
+                        with ui.column().classes('w-full h-full items-center justify-center gap-2'):
+                            ui.icon('show_chart', size='xl').classes('text-gray-600')
+                            ui.label('ยังไม่มีข้อมูลประวัติ').classes('text-gray-500 text-xs')
+                    else:
+                        ret = p_metrics.get('return_pct', 0)
+                        line_color = '#32D74B' if ret >= 0 else '#FF453A'
+                        area_stops = [
+                            {'offset': 0, 'color': f'{line_color}40'},
+                            {'offset': 1, 'color': f'{line_color}00'},
+                        ]
+                        with ui.row().classes('w-full gap-2 mb-1 flex-wrap'):
+                            sign = '+' if ret >= 0 else ''
+                            ui.label(f'Return {sign}{ret:.2f}%').classes(
+                                f'text-[10px] font-black px-2 py-0.5 rounded-full border'
+                            ).style(f'color:{line_color}; border-color:{line_color}40; background:{line_color}15;')
+                            mdd = p_metrics.get('max_drawdown_pct', 0)
+                            ui.label(f'MDD {mdd:.2f}%').classes('text-[10px] font-black px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-gray-300')
+                        ui.echart({
+                            'tooltip': {'trigger': 'axis', 'backgroundColor': '#12161E', 'borderColor': '#30363D', 'textStyle': {'color': '#fff', 'fontSize': 11}},
+                            'legend': {'data': ['Portfolio', 'SPY'], 'top': 2, 'right': 4, 'textStyle': {'color': '#8B949E', 'fontSize': 10}},
+                            'grid': {'left': '6%', 'right': '3%', 'bottom': '14%', 'top': '22%', 'containLabel': True},
+                            'xAxis': {'type': 'category', 'boundaryGap': False, 'data': labels,
+                                      'axisLine': {'lineStyle': {'color': '#30363D'}},
+                                      'axisLabel': {'color': '#8B949E', 'fontSize': 9,
+                                                    'interval': max(len(labels) // 6 - 1, 0)}},
+                            'yAxis': {'type': 'value', 'scale': True,
+                                      'splitLine': {'lineStyle': {'color': '#1C2128', 'type': 'dashed'}},
+                                      'axisLabel': {'color': '#8B949E', 'fontSize': 9}},
+                            'series': [
+                                {'name': 'Portfolio', 'data': p_values, 'type': 'line', 'smooth': True,
+                                 'symbol': 'none',
+                                 'lineStyle': {'color': line_color, 'width': 2.5},
+                                 'areaStyle': {'color': {'type': 'linear', 'x': 0, 'y': 0, 'x2': 0, 'y2': 1, 'colorStops': area_stops}}},
+                                {'name': 'SPY', 'data': b_values, 'type': 'line', 'smooth': True,
+                                 'symbol': 'none',
+                                 'lineStyle': {'color': '#8B949E', 'width': 1.5, 'type': 'dashed'}},
+                            ],
+                        }).classes('w-full h-full')
+
+            async def on_period_change(e):
+                await load_hist_chart(e.value)
+
+            hist_period_select.on('update:model-value', on_period_change)
+            ui.timer(0.3, lambda: asyncio.ensure_future(load_hist_chart('1M')), once=True)
+
         def refresh_trade_plan_panel(next_data):
             trade_plan_container.clear()
             with trade_plan_container:
@@ -1688,6 +1763,48 @@ async def main_page(client):
                     next_data.get('sorted_assets', []),
                     next_data.get('role', 'FREE'),
                 )
+
+        # ==========================================
+        # PERFORMANCE ATTRIBUTION CARD
+        # ==========================================
+        def render_performance_attribution(panel_assets, curr_sym, curr_rate):
+            assets = [a for a in (panel_assets or []) if a.get('profit') is not None]
+            if not assets:
+                return
+            total_abs_profit = sum(abs(float(a.get('profit', 0))) for a in assets)
+            sorted_attrs = sorted(assets, key=lambda x: float(x.get('profit', 0)), reverse=True)
+            max_abs = max((abs(float(a.get('profit', 0))) for a in sorted_attrs), default=1) or 1
+
+            with ui.column().classes('w-full mt-2 bg-[#12161E]/60 border border-white/5 p-4 md:p-5 rounded-[24px] gap-3'):
+                with ui.row().classes('w-full justify-between items-center flex-wrap gap-2'):
+                    with ui.column().classes('gap-0'):
+                        ui.label('PERFORMANCE ATTRIBUTION').classes('text-[10px] md:text-xs font-black text-[#D0FD3E] tracking-widest uppercase')
+                        ui.label('สัดส่วนกำไร/ขาดทุนแต่ละสินทรัพย์').classes('text-[9px] text-gray-500 font-bold')
+                    total_p = sum(float(a.get('profit', 0)) for a in assets) * curr_rate
+                    total_sign = '+' if total_p >= 0 else ''
+                    total_color = '#32D74B' if total_p >= 0 else '#FF453A'
+                    ui.label(f'{total_sign}{curr_sym}{abs(total_p):,.2f}').classes('text-sm font-black').style(f'color:{total_color};')
+
+                with ui.column().classes('w-full gap-2'):
+                    for a in sorted_attrs:
+                        profit_usd = float(a.get('profit', 0))
+                        profit = profit_usd * curr_rate
+                        pct = float(a.get('profit_pct', 0))
+                        bar_w = int(abs(profit_usd) / max_abs * 100)
+                        color = '#32D74B' if profit >= 0 else '#FF453A'
+                        sign = '+' if profit >= 0 else ''
+                        with ui.row().classes('w-full items-center gap-2 md:gap-3'):
+                            ui.label(a['ticker']).classes('text-[10px] md:text-xs font-black text-white shrink-0').style('min-width:52px;')
+                            with ui.element('div').classes('flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden'):
+                                ui.element('div').classes('h-full rounded-full transition-all').style(
+                                    f'width:{bar_w}%; background:{color}; box-shadow:0 0 6px {color}80;'
+                                )
+                            ui.label(f'{sign}{curr_sym}{abs(profit):,.0f}').classes('text-[10px] font-black shrink-0').style(f'color:{color}; min-width:60px; text-align:right;')
+                            ui.label(f'({sign}{pct:.2f}%)').classes('text-[9px] font-bold text-gray-500 shrink-0').style('min-width:54px;')
+
+        attr_container = ui.column().classes('w-full')
+        with attr_container:
+            render_performance_attribution(d.get('sorted_assets', []), d.get('curr_sym', '$'), d.get('curr_rate', 1.0))
 
         with ui.row().classes('w-full justify-between items-center mt-6 mb-2 border-b border-white/5 pb-2 flex-wrap gap-2'):
             ui.label(tr('dashboard.holdings', lang)).classes('ax-section-title')
@@ -1837,7 +1954,7 @@ async def main_page(client):
             )
 
             # ใช้ curr_sym ที่ส่งเข้ามา เพื่อให้ popup ตรงกับ dashboard
-            curr_rate = 34.5 if curr_sym == '฿' else 1.0
+            curr_rate = get_usd_thb_rate() if curr_sym == '฿' else 1.0
 
             # เช็คซ้ำอีกรอบแบบของเดิม (ปลอดภัย)
             if last_seen != today_str:
@@ -2159,6 +2276,9 @@ async def main_page(client):
         update_dashboard_meta_ui(nd)
         refresh_trade_plan_panel(nd)
         refresh_health_score_panel(nd)
+        attr_container.clear()
+        with attr_container:
+            render_performance_attribution(nd.get('sorted_assets', []), nd.get('curr_sym', '$'), nd.get('curr_rate', 1.0))
         
         if current_tickers != new_tickers:
             trigger_sort_refresh() # ถ้ามีการเพิ่ม/ลบหุ้น ให้วาดใหม่
@@ -2168,7 +2288,7 @@ async def main_page(client):
                 t = a['ticker']
                 if f'val_{t}' in ui_refs:
                     curr_sym = nd['curr_sym']
-                    curr_rate = 34.5 if app.storage.user.get('currency', 'USD') == 'THB' else 1.0
+                    curr_rate = get_usd_thb_rate() if app.storage.user.get('currency', 'USD') == 'THB' else 1.0
                     
                     # แปลงค่าให้ตรงสกุลเงิน
                     cost = float(a['avg_cost']) * curr_rate
@@ -3203,7 +3323,45 @@ async def alerts_page():
             if role in ['free']:
                 ui.button('UPGRADE PRO TO UNLOCK', on_click=lambda: ui.navigate.to('/payment')).classes('bg-gradient-to-r from-[#FFD700]/10 to-transparent text-[#FFD700] border border-[#FFD700]/30 font-black px-6 py-3 rounded-full text-xs tracking-widest shadow-lg w-full md:w-auto')
             else:
-                ui.button('+ NEW ALERT (VIA BOT)', icon='telegram', on_click=lambda: ui.navigate.to('https://t.me/Apexify_Trading_bot', new_tab=True)).classes('bg-gradient-to-r from-[#D0FD3E] to-[#32D74B] text-black font-black px-6 py-3 rounded-full shadow-[0_0_20px_rgba(208,253,62,0.4)] hover:scale-105 transition-all text-xs md:text-sm w-full md:w-auto')
+                def open_create_alert_dialog():
+                    with ui.dialog() as alert_dialog, ui.card().classes('w-full max-w-md bg-[#0E1420] border border-[#D0FD3E]/30 rounded-3xl p-6 gap-4'):
+                        ui.element('div').classes('absolute -top-20 -right-20 w-48 h-48 bg-[#D0FD3E]/10 rounded-full blur-[60px] pointer-events-none')
+                        ui.label('CREATE PRICE ALERT').classes('text-lg font-black text-[#D0FD3E] tracking-widest uppercase z-10')
+                        ui.label('แจ้งเตือนผ่าน Telegram Bot ทันทีที่ราคาถึงเป้าหมาย').classes('text-xs text-gray-400 -mt-2 z-10')
+
+                        sym_input = ui.input('Ticker เช่น AAPL, BTC-USD, PTT.BK').props('outlined dark').classes('w-full z-10')
+                        price_input = ui.number('ราคาเป้าหมาย ($)', min=0.01, step=0.01, format='%.4f').props('outlined dark').classes('w-full z-10')
+                        cond_input = ui.select(
+                            options={'above': '↑ สูงกว่า (Above)', 'below': '↓ ต่ำกว่า (Below)'},
+                            value='above', label='เงื่อนไข'
+                        ).props('outlined dark').classes('w-full z-10')
+
+                        async def save_alert():
+                            sym = (sym_input.value or '').strip().upper()
+                            price_val = price_input.value
+                            if not sym:
+                                ui.notify('กรุณากรอก Ticker', type='warning')
+                                return
+                            if not price_val or float(price_val) <= 0:
+                                ui.notify('กรุณากรอกราคาเป้าหมาย', type='warning')
+                                return
+                            cond_map = {'above': '>', 'below': '<'}
+                            cond_val = cond_map.get(cond_input.value, '>')
+                            user_id_for_alert = app.storage.user.get('user_id') or str(tid)
+                            success = await run.io_bound(set_user_price_alert, str(user_id_for_alert), sym, float(price_val), cond_val)
+                            if success:
+                                ui.notify(f'ตั้งแจ้งเตือน {sym} @ ${float(price_val):,.4f} สำเร็จ', type='positive')
+                                alert_dialog.close()
+                                ui.navigate.reload()
+                            else:
+                                ui.notify('เกิดข้อผิดพลาด กรุณาลองใหม่', type='negative')
+
+                        with ui.row().classes('w-full gap-2 mt-2 z-10'):
+                            ui.button('ยกเลิก', on_click=alert_dialog.close).props('flat').classes('flex-1 text-gray-400 font-black')
+                            ui.button('SAVE ALERT', icon='notifications_active', on_click=save_alert).classes('flex-1 bg-gradient-to-r from-[#D0FD3E] to-[#32D74B] text-black font-black rounded-xl')
+                    alert_dialog.open()
+
+                ui.button('+ NEW ALERT', icon='add_alert', on_click=open_create_alert_dialog).classes('bg-gradient-to-r from-[#D0FD3E] to-[#32D74B] text-black font-black px-6 py-3 rounded-full shadow-[0_0_20px_rgba(208,253,62,0.4)] hover:scale-105 transition-all text-xs md:text-sm w-full md:w-auto')
 
         alerts = await run.io_bound(get_user_price_alerts, str(tid))
 
@@ -3211,7 +3369,7 @@ async def alerts_page():
             with ui.column().classes('w-full items-center justify-center p-8 md:p-16 bg-[#12161E]/50 backdrop-blur-md border border-white/5 rounded-[32px] mt-6 shadow-inner'):
                 ui.icon('notifications_off', size='4xl').classes('text-gray-600 mb-4')
                 ui.label('No Active Alerts').classes('text-lg md:text-xl font-bold text-gray-400')
-                ui.label('คุณยังไม่มีการตั้งเตือนราคา เข้า Telegram แล้วพิมพ์ /alert เพื่อเริ่มต้นได้เลย').classes('text-xs md:text-sm text-gray-500 mt-2 text-center')
+                ui.label('คลิก + NEW ALERT เพื่อสร้างการแจ้งเตือนได้เลย').classes('text-xs md:text-sm text-gray-500 mt-2 text-center')
         else:
             with ui.grid(columns='grid-cols-1 sm:grid-cols-2 lg:grid-cols-3').classes('w-full gap-4 md:gap-6 mt-4'):
                 for alert in alerts:
@@ -3278,51 +3436,91 @@ async def macro_page(client):
             ui.label('Macro-Economic HUD').classes('text-3xl md:text-5xl font-black text-white tracking-wide mt-2')
             ui.label(tr('macro.subtitle', lang)).classes('text-sm md:text-lg text-gray-400 mt-2 px-4 text-center')
 
-        # ดึงข้อมูล 3 อินดิเคเตอร์หลักระดับโลก (เปลี่ยน CL=F เป็น USO ป้องกัน Error)
+        # ดึงข้อมูล 3 อินดิเคเตอร์หลักพร้อม sparkline 30 วัน
+        import yfinance as yf_macro
+
+        async def _fetch_macro_sparkline(ticker: str):
+            try:
+                data = await run.io_bound(
+                    lambda: yf_macro.download(ticker, period='30d', interval='1d', progress=False)
+                )
+                if data.empty:
+                    return []
+                col = data['Close']
+                if hasattr(col, 'columns'):
+                    col = col.iloc[:, 0]
+                return [float(v) for v in col.dropna().tolist()]
+            except Exception:
+                return []
+
         try:
-            vix = await run.io_bound(get_live_price, '^VIX') or 0.0  # ดัชนีความกลัว
-            tnx = await run.io_bound(get_live_price, '^TNX') or 0.0  # ดอกเบี้ยพันธบัตร 10 ปี
-            oil = await run.io_bound(get_live_price, 'USO') or 0.0   # ราคากองทุนน้ำมันดิบ USO
+            vix = await run.io_bound(get_live_price, '^VIX') or 0.0
+            tnx = await run.io_bound(get_live_price, '^TNX') or 0.0
+            oil = await run.io_bound(get_live_price, 'CL=F') or 0.0
         except:
             vix, tnx, oil = 0.0, 0.0, 0.0
 
-        # คำนวณความเสี่ยง (Logic สไตล์ Quant)
+        vix_spark, tnx_spark, oil_spark = await asyncio.gather(
+            _fetch_macro_sparkline('^VIX'),
+            _fetch_macro_sparkline('^TNX'),
+            _fetch_macro_sparkline('CL=F'),
+        )
+
         vix_color = '#FF453A' if vix > 25 else '#FCD535' if vix > 18 else '#32D74B'
         vix_status = 'HIGH RISK (เทขาย)' if vix > 25 else 'WARNING (เฝ้าระวัง)' if vix > 18 else 'SAFE (ปลอดภัย)'
-        
+
         tnx_color = '#FF453A' if tnx > 4.5 else '#FCD535' if tnx > 4.0 else '#32D74B'
         tnx_status = 'BEARISH (กดดันหุ้น)' if tnx > 4.5 else 'NEUTRAL (ทรงตัว)' if tnx > 4.0 else 'BULLISH (หนุนตลาด)'
 
-        # กองทุนน้ำมัน USO ถ้าราคาเกิน 80 ดอลลาร์ แปลว่าเงินเฟ้อพลังงานเริ่มมา
-        oil_color = '#FF453A' if oil > 80 else '#00BFFF'
-        oil_status = 'INFLATION THREAT (เงินเฟ้อพุ่ง)' if oil > 80 else 'STABLE (พลังงานปกติ)'
+        oil_color = '#FF453A' if oil > 85 else '#FCD535' if oil > 75 else '#00BFFF'
+        oil_status = 'INFLATION THREAT (เงินเฟ้อพุ่ง)' if oil > 85 else 'ELEVATED (ราคาสูง)' if oil > 75 else 'STABLE (พลังงานปกติ)'
 
-        # แผงหน้าปัด (Dashboard Grid)
+        def _mini_sparkline_opts(data: list, color: str) -> dict:
+            if not data:
+                return {}
+            is_up = data[-1] >= data[0] if len(data) > 1 else True
+            c = color
+            return {
+                'grid': {'left': 0, 'right': 0, 'top': 4, 'bottom': 0},
+                'xAxis': {'type': 'category', 'show': False, 'boundaryGap': False},
+                'yAxis': {'type': 'value', 'show': False, 'scale': True},
+                'series': [{
+                    'type': 'line', 'data': data, 'smooth': True, 'symbol': 'none',
+                    'lineStyle': {'color': c, 'width': 2},
+                    'areaStyle': {'color': {'type': 'linear', 'x': 0, 'y': 0, 'x2': 0, 'y2': 1,
+                                            'colorStops': [{'offset': 0, 'color': f'{c}50'}, {'offset': 1, 'color': f'{c}05'}]}},
+                }],
+                'tooltip': {'show': False},
+            }
+
+        def _macro_change_pct(data: list) -> str:
+            if len(data) >= 2 and data[0] != 0:
+                pct = (data[-1] - data[0]) / data[0] * 100
+                sign = '+' if pct >= 0 else ''
+                return f'{sign}{pct:.2f}% (30d)'
+            return ''
+
         with ui.row().classes('w-full grid grid-cols-1 md:grid-cols-3 gap-6 mt-2'):
-            
-            # หน้าปัด 1: VIX (Volatility)
-            with ui.column().classes('bg-[#12161E]/80 backdrop-blur-xl border border-white/5 p-6 md:p-8 rounded-[32px] shadow-lg items-center text-center relative overflow-hidden transition-all hover:-translate-y-1'):
-                ui.element('div').classes('absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none').style(f'background-color: {vix_color}30;')
-                ui.label('VOLATILITY INDEX (VIX)').classes('text-[10px] text-gray-400 font-black tracking-widest uppercase')
-                ui.label(f'{vix:.2f}').classes('text-5xl md:text-6xl font-black mt-4 drop-shadow-md').style(f'color: {vix_color};')
-                ui.label('ดัชนีความกลัวของนักลงทุน').classes('text-xs font-bold text-gray-500 mt-2')
-                ui.label(vix_status).classes(f'text-xs font-black tracking-widest px-4 py-1.5 rounded-full mt-4 border').style(f'color: {vix_color}; border-color: {vix_color}50; background-color: {vix_color}10;')
 
-            # หน้าปัด 2: US 10Y Yield
-            with ui.column().classes('bg-[#12161E]/80 backdrop-blur-xl border border-white/5 p-6 md:p-8 rounded-[32px] shadow-lg items-center text-center relative overflow-hidden transition-all hover:-translate-y-1'):
-                ui.element('div').classes('absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none').style(f'background-color: {tnx_color}30;')
-                ui.label('US 10-YEAR YIELD').classes('text-[10px] text-gray-400 font-black tracking-widest uppercase')
-                ui.label(f'{tnx:.2f}%').classes('text-5xl md:text-6xl font-black mt-4 drop-shadow-md').style(f'color: {tnx_color};')
-                ui.label('ผลตอบแทนพันธบัตรรัฐบาล').classes('text-xs font-bold text-gray-500 mt-2')
-                ui.label(tnx_status).classes(f'text-xs font-black tracking-widest px-4 py-1.5 rounded-full mt-4 border').style(f'color: {tnx_color}; border-color: {tnx_color}50; background-color: {tnx_color}10;')
-
-            # หน้าปัด 3: USO (US Oil Fund)
-            with ui.column().classes('bg-[#12161E]/80 backdrop-blur-xl border border-white/5 p-6 md:p-8 rounded-[32px] shadow-lg items-center text-center relative overflow-hidden transition-all hover:-translate-y-1'):
-                ui.element('div').classes('absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none').style(f'background-color: {oil_color}30;')
-                ui.label('US OIL FUND (USO)').classes('text-[10px] text-gray-400 font-black tracking-widest uppercase')
-                ui.label(f'${oil:.2f}').classes('text-5xl md:text-6xl font-black mt-4 drop-shadow-md').style(f'color: {oil_color};')
-                ui.label('ต้นทุนพลังงานโลก (น้ำมัน)').classes('text-xs font-bold text-gray-500 mt-2')
-                ui.label(oil_status).classes(f'text-xs font-black tracking-widest px-4 py-1.5 rounded-full mt-4 border').style(f'color: {oil_color}; border-color: {oil_color}50; background-color: {oil_color}10;')
+            for label, val, fmt, subtitle, status, color, spark in [
+                ('VOLATILITY INDEX (VIX)', vix, f'{vix:.2f}', 'ดัชนีความกลัวของนักลงทุน', vix_status, vix_color, vix_spark),
+                ('US 10-YEAR YIELD', tnx, f'{tnx:.2f}%', 'ผลตอบแทนพันธบัตรรัฐบาล', tnx_status, tnx_color, tnx_spark),
+                ('CRUDE OIL (WTI)', oil, f'${oil:.2f}', 'ราคาน้ำมันดิบ West Texas', oil_status, oil_color, oil_spark),
+            ]:
+                with ui.column().classes('bg-[#12161E]/80 backdrop-blur-xl border border-white/5 p-6 md:p-7 rounded-[32px] shadow-lg items-center text-center relative overflow-hidden transition-all hover:-translate-y-1 gap-1'):
+                    ui.element('div').classes('absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none').style(f'background-color: {color}30;')
+                    ui.label(label).classes('text-[10px] text-gray-400 font-black tracking-widest uppercase z-10')
+                    ui.label(fmt).classes('text-5xl md:text-6xl font-black mt-3 drop-shadow-md z-10').style(f'color: {color};')
+                    ui.label(subtitle).classes('text-xs font-bold text-gray-500 mt-1 z-10')
+                    # Mini sparkline
+                    if spark:
+                        spark_opts = _mini_sparkline_opts(spark, color)
+                        ui.echart(spark_opts).classes('w-full z-10').style('height:60px; margin-top:8px; margin-bottom:4px;')
+                        change_txt = _macro_change_pct(spark)
+                        if change_txt:
+                            ch_color = color if (spark[-1] >= spark[0] if len(spark) > 1 else True) else '#FF453A'
+                            ui.label(change_txt).classes('text-[10px] font-bold z-10').style(f'color:{ch_color};')
+                    ui.label(status).classes('text-xs font-black tracking-widest px-4 py-1.5 rounded-full mt-3 border z-10').style(f'color: {color}; border-color: {color}50; background-color: {color}10;')
 
         # กล่อง AI สรุปกลยุทธ์ (AI Strategy Brief)
         with ui.row().classes('w-full bg-gradient-to-r from-[#161B22] to-[#1C2128] border border-white/10 rounded-[24px] p-6 md:p-8 mt-6 shadow-2xl items-center gap-6 flex-col md:flex-row relative overflow-hidden'):
@@ -3406,6 +3604,99 @@ async def gemini_page(client):
             ui.button(tr('copilot.back_dashboard', lang), on_click=lambda: ui.navigate.to('/')).props('flat').classes('text-gray-300')
 
 
+@ui.page('/news')
+@standard_page_frame
+async def news_page(client):
+    await client.connected()
+    ui.query('body').style(f'background-color: {COLORS.get("bg", "#0D1117")}; font-family: "Inter", "Noto Sans Thai", "Noto Sans", "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;')
+    create_ticker()
+
+    tid = app.storage.user.get('telegram_id')
+    user_info = get_user_by_telegram(tid) if tid else {}
+    role = str(user_info.get('role', 'free')).lower()
+
+    portfolio = await run.io_bound(get_portfolio, str(tid)) if tid else []
+    tickers = list({row['symbol'] for row in portfolio}) if portfolio else []
+
+    with ui.column().classes('w-full max-w-5xl mx-auto p-4 md:p-8 gap-6 pt-20 md:pt-24'):
+        # Header
+        with ui.row().classes('w-full justify-between items-end flex-wrap gap-4'):
+            with ui.column().classes('gap-1'):
+                ui.label('NEWS FEED').classes(
+                    'text-2xl md:text-3xl font-black text-white tracking-widest uppercase'
+                )
+                ui.label('ข่าวล่าสุดสำหรับทุกหุ้นในพอร์ต · AI Summary by Gemini').classes(
+                    'text-xs md:text-sm text-gray-400'
+                )
+            ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/')).props('flat').classes(
+                'text-gray-400 hover:text-white'
+            )
+
+        if not tickers:
+            with ui.column().classes(
+                'w-full items-center justify-center p-12 '
+                'bg-[#12161E]/50 border border-white/5 rounded-[32px] mt-4'
+            ):
+                ui.icon('newspaper', size='4xl').classes('text-gray-700 mb-4')
+                ui.label('No holdings in portfolio').classes('text-lg font-bold text-gray-500')
+                ui.label('เพิ่มหุ้นในพอร์ตก่อนเพื่อดูข่าว').classes('text-sm text-gray-600 mt-1 text-center')
+            return
+
+        # News cards — fetch all in parallel
+        news_container = ui.column().classes('w-full gap-5')
+
+        async def load_all_news():
+            sem = asyncio.Semaphore(3)
+
+            async def fetch_one(sym):
+                async with sem:
+                    return sym, await run.io_bound(fetch_stock_news_summary, sym)
+
+            results = await asyncio.gather(*[fetch_one(sym) for sym in tickers])
+
+            with news_container:
+                for sym, summary in results:
+                    _render_news_card(sym, summary)
+
+        def _render_news_card(sym: str, summary: str):
+            logo_url = get_logo_url_for_ticker(sym)
+            with ui.card().classes(
+                'w-full bg-[#0F1420]/90 border border-white/8 rounded-[24px] p-0 overflow-hidden '
+                'hover:border-[#D0FD3E]/20 transition-all relative'
+            ):
+                ui.element('div').classes(
+                    'absolute -top-10 -left-10 w-32 h-32 rounded-full blur-[50px] '
+                    'bg-[#D0FD3E]/6 pointer-events-none'
+                )
+                with ui.column().classes('w-full p-5 md:p-6 gap-3 relative z-10'):
+                    # Ticker header
+                    with ui.row().classes('items-center gap-3'):
+                        if logo_url:
+                            ui.image(logo_url).classes('w-9 h-9 rounded-full object-contain bg-white/5 p-1')
+                        else:
+                            ui.element('div').classes(
+                                'w-9 h-9 rounded-full bg-[#D0FD3E]/10 border border-[#D0FD3E]/20 '
+                                'flex items-center justify-center'
+                            )
+                        with ui.column().classes('gap-0'):
+                            ui.label(sym).classes('text-lg font-black text-white tracking-wider leading-none')
+                            ui.label('AI News Summary · 7d').classes('text-[10px] text-gray-500 tracking-widest')
+
+                    ui.element('div').classes('w-full h-px bg-white/5')
+
+                    # Summary text rendered as markdown
+                    ui.markdown(summary).classes(
+                        'text-sm text-gray-300 leading-relaxed w-full '
+                        '[&_strong]:text-[#D0FD3E] [&_strong]:font-bold'
+                    )
+
+                    ui.label('Powered by Gemini AI').classes(
+                        'text-[10px] text-gray-600 tracking-widest self-end mt-1'
+                    )
+
+        ui.timer(0.1, lambda: asyncio.ensure_future(load_all_news()), once=True)
+
+
 @ui.page('/healthz')
 def healthz():
     ui.label('ok')
@@ -3414,6 +3705,7 @@ def healthz():
 # สิ้นสุดไฟล์
 # ==========================================
 def run_web() -> None:
+    app.add_static_files('/static', Path(__file__).parent / 'static')
     ui.run(
         title=APP_TITLE,
         dark=True,

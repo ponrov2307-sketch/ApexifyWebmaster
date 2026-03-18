@@ -70,6 +70,41 @@ def get_user_by_telegram(telegram_id: int):
         print(f"❌ DB Error (get_user_by_telegram): {e}")
         return None
 
+
+def get_user_by_username(username: str):
+    """Look up a user by their username (case-insensitive)."""
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT user_id, status, role, expiry_date, username FROM users WHERE LOWER(username) = LOWER(%s)", (username,))
+            row = c.fetchone()
+            c.close()
+
+        if row:
+            expiry = row[3]
+            expiry_str = expiry.strftime('%d/%m/%Y') if isinstance(expiry, datetime) else str(expiry) if expiry else None
+            role = row[2] if row[2] else 'free'
+
+            if role in ['vip', 'pro'] and expiry:
+                try:
+                    exp_dt = datetime.strptime(expiry, '%Y-%m-%d %H:%M:%S') if isinstance(expiry, str) else expiry
+                    if datetime.now() > exp_dt:
+                        role = 'free'
+                except: pass
+
+            db_username = row[4] if len(row) > 4 and row[4] else username
+
+            return {
+                'user_id': row[0], 'username': db_username,
+                'status': row[1] if row[1] else 'active',
+                'role': role, 'vip_expiry': expiry_str
+            }
+        return None
+    except Exception as e:
+        print(f"❌ DB Error (get_user_by_username): {e}")
+        return None
+
+
 def get_portfolio(user_id: str):
     try:
         with get_db_connection() as conn:
@@ -220,11 +255,75 @@ def set_user_price_alert(user_id: str, symbol: str, target_price: float, conditi
                 c.execute("UPDATE user_price_alerts SET target_price = %s, condition = %s WHERE id = %s", (float(target_price), condition, row[0]))
             else:
                 # ถ้ายังไม่มี ให้สร้างใหม่
-                c.execute("INSERT INTO user_price_alerts (user_id, symbol, target_price, condition, is_active) VALUES (%s, %s, %s, %s, 1)", 
+                c.execute("INSERT INTO user_price_alerts (user_id, symbol, target_price, condition, is_active) VALUES (%s, %s, %s, %s, 1)",
                           (str(user_id), symbol.upper(), float(target_price), condition))
             conn.commit()
             c.close()
         return True
     except Exception as e:
         print(f"❌ DB Error (set_user_price_alert): {e}")
+        return False
+
+
+# ─── Watchlist ───
+
+def _ensure_watchlist_table():
+    """Create watchlist table if it doesn't exist."""
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS user_watchlist (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(64) NOT NULL,
+                    ticker VARCHAR(20) NOT NULL,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(user_id, ticker)
+                )
+            """)
+            conn.commit()
+            c.close()
+    except Exception as e:
+        print(f"❌ DB Error (ensure_watchlist_table): {e}")
+
+
+def get_user_watchlist(user_id: str) -> list[str]:
+    _ensure_watchlist_table()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT ticker FROM user_watchlist WHERE user_id = %s ORDER BY created_at", (str(user_id),))
+            rows = c.fetchall()
+            c.close()
+        return [r[0] for r in rows]
+    except Exception as e:
+        print(f"❌ DB Error (get_user_watchlist): {e}")
+        return []
+
+
+def add_watchlist_item(user_id: str, ticker: str):
+    _ensure_watchlist_table()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("INSERT INTO user_watchlist (user_id, ticker) VALUES (%s, %s) ON CONFLICT DO NOTHING", (str(user_id), ticker.upper()))
+            conn.commit()
+            c.close()
+        return True
+    except Exception as e:
+        print(f"❌ DB Error (add_watchlist_item): {e}")
+        return False
+
+
+def remove_watchlist_item(user_id: str, ticker: str):
+    _ensure_watchlist_table()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM user_watchlist WHERE user_id = %s AND ticker = %s", (str(user_id), ticker.upper()))
+            conn.commit()
+            c.close()
+        return True
+    except Exception as e:
+        print(f"❌ DB Error (remove_watchlist_item): {e}")
         return False    

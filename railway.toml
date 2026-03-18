@@ -1,8 +1,10 @@
 [build]
-builder = "NIXPACKS"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python run_web.py"
-healthcheckPath = "/healthz"
+startCommand = "./start.sh"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10

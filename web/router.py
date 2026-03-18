@@ -201,6 +201,7 @@ def create_layout():
             ('grid_on', 'router.menu.heatmap', '/heatmap', ['pro', 'vip', 'admin']),
             ('trending_up', 'router.menu.simulator', '/sp500', ['pro', 'vip', 'admin']),
             ('notifications_active', 'router.menu.alerts', '/alerts', ['pro', 'vip', 'admin']),
+            ('newspaper', 'router.menu.news', '/news', ['pro', 'vip', 'admin']),
             ('download', 'router.menu.export', '/export', ['pro', 'vip', 'admin']),
             ('workspace_premium', 'router.menu.upgrade', '/payment', ['free', 'pro', 'vip', 'admin'])
         ]

@@ -1,0 +1,44 @@
+# FastAPI + server
+fastapi==0.129.0
+uvicorn==0.40.0
+starlette==0.52.1
+python-multipart==0.0.22
+httpx==0.28.1
+
+# Auth
+PyJWT==2.11.0
+
+# Data validation
+pydantic==2.12.5
+pydantic_core==2.41.5
+
+# Database
+psycopg2-binary==2.9.11
+supabase==2.28.0
+
+# AI
+google-genai==1.64.0
+
+# Finance data
+yfinance==1.2.0
+pandas==2.3.3
+numpy==2.4.2
+ta==0.11.0
+
+# HTTP / scraping
+requests==2.32.5
+curl_cffi==0.13.0
+beautifulsoup4==4.14.3
+lxml==6.0.2
+
+# Utils
+python-dotenv==1.2.1
+schedule==1.2.2
+APScheduler==3.11.2
+pillow==11.3.0
+
+# NiceGUI (legacy web, still imported)
+nicegui==3.8.0
+
+# Telegram bot
+pyTelegramBotAPI==4.31.0
