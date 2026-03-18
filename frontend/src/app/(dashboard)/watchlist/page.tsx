@@ -7,6 +7,7 @@ import { logoUrl } from "@/lib/dashboard-helpers";
 import api from "@/lib/api";
 import Sparkline from "@/components/sparkline";
 import ChartModal from "@/components/chart-modal";
+import AnimatedNumber from "@/components/animated-number";
 import {
   Eye,
   Plus,
@@ -261,21 +262,29 @@ export default function WatchlistPage() {
                     {/* Price + Change */}
                     <div className="flex items-center gap-4 min-w-[200px] justify-end">
                       <div className="text-right">
-                        <p className="text-lg font-black tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                          ${item.price.toFixed(2)}
-                        </p>
+                        <AnimatedNumber
+                          value={item.price}
+                          format={(n) => n.toFixed(2)}
+                          prefix="$"
+                          duration={500}
+                          className="text-lg font-black"
+                          style={{ color: 'var(--text-primary)' }}
+                        />
                         <div className="flex items-center gap-1 justify-end">
                           {up ? (
                             <TrendingUp size={12} className="text-[#32D74B]" />
                           ) : (
                             <TrendingDown size={12} className="text-[#FF453A]" />
                           )}
-                          <span
-                            className="text-sm font-black tabular-nums"
+                          <AnimatedNumber
+                            value={item.change_pct}
+                            format={(n) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}`}
+                            suffix="%"
+                            duration={500}
+                            flash={false}
+                            className="text-sm font-black"
                             style={{ color: up ? "#32D74B" : "#FF453A" }}
-                          >
-                            {up ? "+" : ""}{item.change_pct.toFixed(2)}%
-                          </span>
+                          />
                         </div>
                       </div>
 

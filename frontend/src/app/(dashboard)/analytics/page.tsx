@@ -7,6 +7,7 @@ import { usePortfolio } from "@/lib/hooks";
 import ProGate from "@/components/pro-gate";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import AnimatedNumber from "@/components/animated-number";
 import api from "@/lib/api";
 import {
   PieChart,
@@ -284,18 +285,24 @@ export default function AnalyticsPage() {
                   <div className="grid grid-cols-3 gap-4 mb-6">
                     <div className="bg-[#0D1117] border border-white/8 rounded-2xl p-4">
                       <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Total Value</span>
-                      <p className="text-xl font-black text-white tabular-nums mt-1">${fmt(summary.total_value)}</p>
+                      <AnimatedNumber value={summary.total_value} format={fmt} prefix="$" duration={600}
+                        className="text-xl font-black text-white mt-1 block" />
                     </div>
                     <div className="bg-[#0D1117] border border-white/8 rounded-2xl p-4">
                       <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Total Cost</span>
-                      <p className="text-xl font-black text-gray-400 tabular-nums mt-1">${fmt(summary.total_cost)}</p>
+                      <AnimatedNumber value={summary.total_cost} format={fmt} prefix="$" duration={600} flash={false}
+                        className="text-xl font-black text-gray-400 mt-1 block" />
                     </div>
                     <div className="bg-[#0D1117] border border-white/8 rounded-2xl p-4">
                       <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Total P&L</span>
-                      <p className="text-xl font-black tabular-nums mt-1"
-                        style={{ color: summary.total_pnl >= 0 ? "#32D74B" : "#FF453A" }}>
-                        {summary.total_pnl >= 0 ? "+" : ""}${fmt(summary.total_pnl)}
-                      </p>
+                      <AnimatedNumber
+                        value={summary.total_pnl}
+                        format={(n) => `${n >= 0 ? "+" : ""}${fmt(n)}`}
+                        prefix="$"
+                        duration={600}
+                        className="text-xl font-black mt-1 block"
+                        style={{ color: summary.total_pnl >= 0 ? "#32D74B" : "#FF453A" }}
+                      />
                     </div>
                   </div>
                 )}

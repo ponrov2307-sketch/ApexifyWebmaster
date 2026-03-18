@@ -12,6 +12,7 @@ import TradePlanPanel from "@/components/trade-plan";
 import HealthScorePanel from "@/components/health-score";
 import PerformanceAttribution from "@/components/performance-attribution";
 import RebalanceModal from "@/components/rebalance-modal";
+import AnimatedNumber from "@/components/animated-number";
 import api from "@/lib/api";
 import { fmt, fmtPct, logoUrl, computeHealthScore } from "@/lib/dashboard-helpers";
 import {
@@ -278,12 +279,32 @@ export default function DashboardPage() {
             <Loader2 className="w-10 h-10 animate-spin text-[#D0FD3E] my-6" />
           ) : (
             <>
-              <p className={`tabular-nums text-4xl md:text-[62px] leading-none font-black text-white tracking-tight drop-shadow-lg ${isProfitOverall ? "animate-pulse-green" : "animate-pulse-red"}`}>
-                {currSymbol}{summary ? fmt(summary.total_value) : "0.00"}
-              </p>
+              <AnimatedNumber
+                value={summary ? summary.total_value : 0}
+                format={fmt}
+                prefix={currSymbol}
+                duration={800}
+                className={`text-4xl md:text-[62px] leading-none font-black text-white tracking-tight drop-shadow-lg ${isProfitOverall ? "animate-pulse-green" : "animate-pulse-red"}`}
+              />
               {summary && (
                 <p className={`tabular-nums text-base md:text-xl font-black mt-3 drop-shadow-md ${isProfitOverall ? "text-[#32D74B]" : "text-[#FF453A]"}`}>
-                  {isProfitOverall ? "+" : "-"} {currSymbol}{fmt(Math.abs(summary.total_pnl))} ({isProfitOverall ? "+" : ""}{totalPnlPct.toFixed(2)}%)
+                  {isProfitOverall ? "+" : "-"}{" "}
+                  <AnimatedNumber
+                    value={Math.abs(summary.total_pnl)}
+                    format={fmt}
+                    prefix={currSymbol}
+                    duration={800}
+                    flash={false}
+                  />
+                  {" ("}
+                  <AnimatedNumber
+                    value={totalPnlPct}
+                    format={(n) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}`}
+                    suffix="%"
+                    duration={800}
+                    flash={false}
+                  />
+                  {")"}
                 </p>
               )}
             </>
@@ -373,8 +394,8 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-xl md:text-2xl font-black text-white leading-none tracking-wide">{s.ticker}</p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <span className="tabular-nums text-[10px] md:text-xs text-gray-300 bg-white/10 px-2 py-0.5 rounded-md font-bold">
-                        Price: {currSymbol}{fmt(s.price)}
+                      <span className="text-[10px] md:text-xs text-gray-300 bg-white/10 px-2 py-0.5 rounded-md font-bold">
+                        Price: <AnimatedNumber value={s.price} format={fmt} prefix={currSymbol} duration={500} className="text-[10px] md:text-xs" />
                       </span>
                       <span className="text-[10px] md:text-xs text-gray-400 bg-white/5 px-2 py-0.5 rounded-md">
                         Avg: {currSymbol}{fmt(s.avg_cost)}
@@ -391,13 +412,28 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="flex flex-col items-end gap-1 shrink-0 min-w-[160px]">
-                  <span className="tabular-nums text-xl md:text-2xl font-black leading-none tracking-tight drop-shadow-md"
-                    style={{ color: profitColor }}>
-                    {currSymbol}{fmt(s.value)}
-                  </span>
+                  <AnimatedNumber
+                    value={s.value}
+                    format={fmt}
+                    prefix={currSymbol}
+                    duration={600}
+                    className="text-xl md:text-2xl font-black leading-none tracking-tight drop-shadow-md"
+                    style={{ color: profitColor }}
+                    positiveColor={profitColor}
+                    negativeColor={profitColor}
+                  />
                   <span className="tabular-nums text-xs md:text-sm font-bold px-2 py-0.5 rounded-md"
                     style={{ color: profitColor, backgroundColor: `${profitColor}10` }}>
-                    {up ? "+" : ""}{currSymbol}{fmt(Math.abs(s.pnl))} ({fmtPct(s.pnl_pct)})
+                    <AnimatedNumber
+                      value={Math.abs(s.pnl)}
+                      format={(n) => `${up ? "+" : ""}${fmt(n)}`}
+                      prefix={currSymbol}
+                      duration={600}
+                      flash={false}
+                    />
+                    {" ("}
+                    <AnimatedNumber value={s.pnl_pct} format={(n) => fmtPct(n)} duration={600} flash={false} />
+                    {")"}
                   </span>
 
                   <div className="flex gap-1 mt-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:pointer-events-none md:group-hover:pointer-events-auto transition-opacity duration-300">
@@ -426,7 +462,8 @@ export default function DashboardPage() {
               </span>
               <span className="font-bold tabular-nums"
                 style={{ color: isProfitOverall ? "#32D74B" : "#FF453A" }}>
-                Total P&L: {currSymbol}{fmt(summary.total_pnl)} ({fmtPct(totalPnlPct)})
+                Total P&L: <AnimatedNumber value={summary.total_pnl} format={fmt} prefix={currSymbol} duration={600} flash={false} />
+                {" ("}<AnimatedNumber value={totalPnlPct} format={(n) => fmtPct(n)} duration={600} flash={false} />{")"}
               </span>
             </div>
           )}
