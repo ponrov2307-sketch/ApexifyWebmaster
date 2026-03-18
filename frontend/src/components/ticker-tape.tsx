@@ -74,7 +74,7 @@ export default function TickerTape() {
     };
 
     fetchPrices();
-    const interval = setInterval(fetchPrices, 20000); // refresh every 20s for real-time feel
+    const interval = setInterval(fetchPrices, 10000); // refresh every 10s for real-time feel
     return () => {
       cancelled = true;
       clearInterval(interval);

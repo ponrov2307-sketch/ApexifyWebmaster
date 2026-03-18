@@ -10,7 +10,7 @@ GLOBAL_SPARKLINE_CACHE = {}
 PRICE_CACHE_TIME = {}
 SPARKLINE_CACHE_TIME = {}
 SPARKLINE_CACHE_TTL = 300  # 5 minutes
-PRICE_CACHE_TTL = 60  # 1 minute
+PRICE_CACHE_TTL = 15  # 15 seconds — near real-time
 
 # Ticker info cache (name, div_yield, etc.) — longer TTL since it rarely changes
 _TICKER_INFO_CACHE: dict = {}

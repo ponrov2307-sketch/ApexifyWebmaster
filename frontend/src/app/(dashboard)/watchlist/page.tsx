@@ -81,7 +81,7 @@ export default function WatchlistPage() {
 
   useEffect(() => {
     refresh();
-    const iv = setInterval(refresh, 30000);
+    const iv = setInterval(refresh, 10000);
     return () => clearInterval(iv);
   }, [refresh]);
 
