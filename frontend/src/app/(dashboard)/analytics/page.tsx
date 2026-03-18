@@ -5,6 +5,8 @@ import { useAuth } from "@/lib/auth-store";
 import { useLang, tr } from "@/lib/i18n";
 import { usePortfolio } from "@/lib/hooks";
 import ProGate from "@/components/pro-gate";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import api from "@/lib/api";
 import {
   PieChart,
@@ -245,9 +247,28 @@ export default function AnalyticsPage() {
 
                   {doctorResult && (
                     <div className="mt-6 w-full max-w-2xl text-left bg-[#0B0E14]/80 backdrop-blur-md p-6 md:p-8 rounded-[24px] border border-[#32D74B]/30 shadow-[0_0_30px_rgba(50,215,75,0.1)]">
-                      <pre className="text-sm md:text-base text-gray-300 leading-relaxed whitespace-pre-wrap font-sans">
-                        {doctorResult}
-                      </pre>
+                      <Markdown remarkPlugins={[remarkGfm]} components={{
+                        h2: ({ children }) => (
+                          <h2 className="text-lg font-black text-white mt-6 mb-3 tracking-wide flex items-center gap-2 border-b border-[#32D74B]/20 pb-2">
+                            {children}
+                          </h2>
+                        ),
+                        h3: ({ children }) => <h3 className="text-base font-bold text-gray-200 mt-4 mb-2">{children}</h3>,
+                        p: ({ children }) => <p className="text-gray-300 leading-relaxed text-sm my-2 bg-white/[0.02] rounded-lg px-3 py-2">{children}</p>,
+                        ul: ({ children }) => <ul className="space-y-1.5 my-2">{children}</ul>,
+                        li: ({ children }) => <li className="text-gray-300 text-sm flex items-start gap-1.5"><span className="text-[#32D74B] mt-0.5">▸</span><span>{children}</span></li>,
+                        strong: ({ children }) => <strong className="text-[#D0FD3E] font-black">{children}</strong>,
+                        em: ({ children }) => <em className="text-[#39C8FF] not-italic font-semibold">{children}</em>,
+                        table: ({ children }) => (
+                          <div className="overflow-x-auto mt-3 mb-4 rounded-2xl border border-[#32D74B]/20 shadow-[0_0_20px_rgba(50,215,75,0.05)]">
+                            <table className="w-full border-collapse" style={{ background: "rgba(13,17,23,0.6)" }}>{children}</table>
+                          </div>
+                        ),
+                        thead: ({ children }) => <thead className="bg-gradient-to-r from-[#32D74B]/15 to-[#32D74B]/5">{children}</thead>,
+                        th: ({ children }) => <th className="px-4 py-3.5 text-[11px] font-black text-[#32D74B] tracking-wider text-left border-b border-[#32D74B]/30 whitespace-nowrap">{children}</th>,
+                        td: ({ children }) => <td className="px-4 py-3.5 text-sm text-gray-200 border-b border-white/5 whitespace-nowrap">{children}</td>,
+                        tr: ({ children }) => <tr className="hover:bg-[#32D74B]/[0.04] transition-colors">{children}</tr>,
+                      }}>{doctorResult}</Markdown>
                       <button onClick={runPortDoctor}
                         className="mt-4 text-sm text-[#32D74B] font-bold hover:underline">
                         {lang === "TH" ? "สแกนอีกครั้ง" : "Scan Again"}
