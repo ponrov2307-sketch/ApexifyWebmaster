@@ -23,7 +23,7 @@ POPULAR_STOCKS = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK-B", "TSM", "AVGO",
     "JPM", "V", "MA", "UNH", "JNJ", "WMT", "PG", "XOM", "HD", "COST",
     "ABBV", "KO", "PEP", "MRK", "LLY", "CVX", "CRM", "ADBE", "NFLX", "AMD",
-    "ORCL", "INTC", "QCOM", "TXN", "CSCO", "IBM", "NOW", "UBER", "ABNB", "SQ",
+    "ORCL", "INTC", "QCOM", "TXN", "CSCO", "IBM", "NOW", "UBER", "ABNB", "PYPL",
     # Growth & Tech
     "PLTR", "SNOW", "SHOP", "MELI", "SE", "COIN", "RBLX", "DKNG", "ROKU", "NET",
     "CRWD", "ZS", "PANW", "DDOG", "MDB", "TEAM", "PINS", "SNAP", "TTD", "U",
