@@ -2,6 +2,7 @@
 
 import { Brain, RefreshCw, X } from "lucide-react";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Lang } from "@/lib/i18n";
 import StockLogo from "@/components/stock-logo";
 import { fmt, fmtPct } from "@/lib/dashboard-helpers";
@@ -66,22 +67,26 @@ export default function RebalanceModal({ open, loading, result, lang, items = []
               {/* AI Result */}
               {result && (
                 <div className="max-w-none mb-6">
-                  <Markdown components={{
-                    h2: ({ children }) => <h2 className="text-lg font-black text-white mt-4 mb-3 tracking-wide">{children}</h2>,
-                    h3: ({ children }) => <h3 className="text-base font-bold text-gray-200 mt-3 mb-2">{children}</h3>,
-                    p: ({ children }) => <p className="text-gray-300 leading-relaxed text-sm">{children}</p>,
-                    ul: ({ children }) => <ul className="space-y-1.5">{children}</ul>,
-                    li: ({ children }) => <li className="text-gray-300 text-sm">{children}</li>,
-                    strong: ({ children }) => <strong className="text-white font-bold">{children}</strong>,
+                  <Markdown remarkPlugins={[remarkGfm]} components={{
+                    h2: ({ children }) => (
+                      <h2 className="text-lg font-black text-white mt-6 mb-3 tracking-wide flex items-center gap-2 border-b border-purple-500/20 pb-2">
+                        {children}
+                      </h2>
+                    ),
+                    h3: ({ children }) => <h3 className="text-base font-bold text-gray-200 mt-4 mb-2">{children}</h3>,
+                    p: ({ children }) => <p className="text-gray-300 leading-relaxed text-sm my-2">{children}</p>,
+                    ul: ({ children }) => <ul className="space-y-1.5 my-2">{children}</ul>,
+                    li: ({ children }) => <li className="text-gray-300 text-sm flex items-start gap-1.5"><span className="text-purple-400 mt-0.5">▸</span><span>{children}</span></li>,
+                    strong: ({ children }) => <strong className="text-[#D0FD3E] font-black">{children}</strong>,
                     table: ({ children }) => (
-                      <div className="overflow-x-auto mt-3 mb-4 rounded-xl border border-purple-500/20">
-                        <table className="w-full border-collapse" style={{ background: "rgba(13,17,23,0.5)" }}>{children}</table>
+                      <div className="overflow-x-auto mt-3 mb-4 rounded-2xl border border-purple-500/20 shadow-[0_0_20px_rgba(168,85,247,0.05)]">
+                        <table className="w-full border-collapse" style={{ background: "rgba(13,17,23,0.6)" }}>{children}</table>
                       </div>
                     ),
-                    thead: ({ children }) => <thead className="bg-purple-500/10">{children}</thead>,
-                    th: ({ children }) => <th className="px-4 py-3 text-[11px] font-black text-purple-300 tracking-wider text-left border-b border-purple-500/20 whitespace-nowrap">{children}</th>,
-                    td: ({ children }) => <td className="px-4 py-3 text-sm text-gray-300 border-b border-white/5 whitespace-nowrap">{children}</td>,
-                    tr: ({ children }) => <tr className="hover:bg-white/3 transition-colors">{children}</tr>,
+                    thead: ({ children }) => <thead className="bg-gradient-to-r from-purple-500/15 to-purple-500/5">{children}</thead>,
+                    th: ({ children }) => <th className="px-4 py-3.5 text-[11px] font-black text-purple-300 tracking-wider text-left border-b border-purple-500/30 whitespace-nowrap">{children}</th>,
+                    td: ({ children }) => <td className="px-4 py-3.5 text-sm text-gray-200 border-b border-white/5">{children}</td>,
+                    tr: ({ children }) => <tr className="hover:bg-purple-500/[0.04] transition-colors">{children}</tr>,
                   }}>{result}</Markdown>
                 </div>
               )}
