@@ -1,6 +1,6 @@
 "use client";
 
-import { CandlestickChart, Crown } from "lucide-react";
+import { CandlestickChart, Crown, Lock } from "lucide-react";
 import { PortfolioItem } from "@/lib/hooks";
 import { Lang, tr } from "@/lib/i18n";
 import { buildTradePlan, ACTION_THEME, fmt, fmtPct } from "@/lib/dashboard-helpers";
@@ -15,12 +15,15 @@ interface Props {
 
 export default function TradePlanPanel({ items, isProPlan, currSymbol, lang, onChart }: Props) {
   if (items.length === 0) return null;
-  const display = isProPlan ? items : items.slice(0, 3);
+
+  // Free users: show all cards but blurred
+  const display = items;
 
   return (
-    <div className="rounded-[22px] border border-white/8 p-5 md:p-6 space-y-4"
+    <div className="relative rounded-[22px] border border-white/8 p-5 md:p-6 space-y-4"
       style={{ background: "linear-gradient(180deg, rgba(14,25,35,0.9), rgba(9,16,24,0.92))", backdropFilter: "blur(14px)", boxShadow: "0 14px 34px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.06)" }}
     >
+      {/* Header — always visible */}
       <div className="flex justify-between items-center flex-wrap gap-3">
         <div>
           <p className="text-xs md:text-sm font-black text-[#20D6A1] tracking-widest uppercase">{tr("trade_plan.title", lang)}</p>
@@ -31,61 +34,81 @@ export default function TradePlanPanel({ items, isProPlan, currSymbol, lang, onC
         </span>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {display.map((s) => {
-          const plan = buildTradePlan(s);
-          const theme = ACTION_THEME[plan.action] || { text: "text-gray-300", bg: "bg-white/5 border-white/10" };
+      {/* Cards — blur for free */}
+      <div className={`${!isProPlan ? "blur-md pointer-events-none select-none" : ""}`}>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {display.map((s) => {
+            const plan = buildTradePlan(s);
+            const theme = ACTION_THEME[plan.action] || { text: "text-gray-300", bg: "bg-white/5 border-white/10" };
 
-          return (
-            <div key={s.ticker} className="bg-[#0B0E14]/70 border border-white/5 rounded-2xl p-4 space-y-3 shadow-inner">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-xl font-black text-white tracking-wider">{plan.ticker}</p>
-                  <p className="text-[11px] text-gray-500 font-bold">
-                    Current {currSymbol}{fmt(s.price)} · Avg {currSymbol}{fmt(s.avg_cost)}
-                  </p>
+            return (
+              <div key={s.ticker} className="bg-[#0B0E14]/70 border border-white/5 rounded-2xl p-4 space-y-3 shadow-inner">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-xl font-black text-white tracking-wider">{plan.ticker}</p>
+                    <p className="text-[11px] text-gray-500 font-bold">
+                      Current {currSymbol}{fmt(s.price)} · Avg {currSymbol}{fmt(s.avg_cost)}
+                    </p>
+                  </div>
+                  <div className="text-right space-y-1">
+                    <span className={`text-[10px] font-black tracking-widest px-3 py-1 rounded-full border ${theme.text} ${theme.bg}`}>
+                      {plan.action}
+                    </span>
+                    <p className="text-[9px] text-gray-400 font-black">
+                      {plan.signal} · C{plan.confidence}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right space-y-1">
-                  <span className={`text-[10px] font-black tracking-widest px-3 py-1 rounded-full border ${theme.text} ${theme.bg}`}>
-                    {plan.action}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className={`text-sm font-black ${plan.pnl_pct >= 0 ? "text-[#32D74B]" : "text-[#FF453A]"}`}>
+                    Profit {fmtPct(plan.pnl_pct)}
                   </span>
-                  <p className="text-[9px] text-gray-400 font-black">
-                    {plan.signal} · C{plan.confidence}
-                  </p>
+                  <span className="text-xs text-[#39C8FF] font-bold">Entry {currSymbol}{fmt(plan.entryLow)}-{currSymbol}{fmt(plan.entryHigh)}</span>
+                  <span className="text-xs text-[#32D74B] font-bold">TP1 {currSymbol}{fmt(plan.tp1)}</span>
+                  <span className="text-xs text-[#20D6A1] font-bold">TP2 {currSymbol}{fmt(plan.tp2)}</span>
+                  <span className="text-xs text-[#FF453A] font-bold">SL {currSymbol}{fmt(plan.sl)}</span>
+                  <span className="text-xs text-[#FCD535] font-black">R:R {plan.rr.toFixed(2)}</span>
+                </div>
+
+                <p className="text-xs text-gray-400 leading-relaxed">{plan.reason}</p>
+
+                <div className="flex gap-2">
+                  <button onClick={() => onChart(s.ticker)}
+                    className="flex-1 flex items-center justify-center gap-1 bg-[#D0FD3E] text-black font-black rounded-lg text-xs py-2">
+                    <CandlestickChart size={12} /> Chart
+                  </button>
                 </div>
               </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <span className={`text-sm font-black ${plan.pnl_pct >= 0 ? "text-[#32D74B]" : "text-[#FF453A]"}`}>
-                  Profit {fmtPct(plan.pnl_pct)}
-                </span>
-                <span className="text-xs text-[#39C8FF] font-bold">Entry {currSymbol}{fmt(plan.entryLow)}-{currSymbol}{fmt(plan.entryHigh)}</span>
-                <span className="text-xs text-[#32D74B] font-bold">TP1 {currSymbol}{fmt(plan.tp1)}</span>
-                <span className="text-xs text-[#20D6A1] font-bold">TP2 {currSymbol}{fmt(plan.tp2)}</span>
-                <span className="text-xs text-[#FF453A] font-bold">SL {currSymbol}{fmt(plan.sl)}</span>
-                <span className="text-xs text-[#FCD535] font-black">R:R {plan.rr.toFixed(2)}</span>
-              </div>
-
-              <p className="text-xs text-gray-400 leading-relaxed">{plan.reason}</p>
-
-              <div className="flex gap-2">
-                <button onClick={() => onChart(s.ticker)}
-                  className="flex-1 flex items-center justify-center gap-1 bg-[#D0FD3E] text-black font-black rounded-lg text-xs py-2">
-                  <CandlestickChart size={12} /> Chart
-                </button>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
-      {!isProPlan && items.length > 3 && (
-        <div className="flex items-center justify-center gap-3 pt-2">
-          <span className="text-xs text-gray-500">{items.length - 3} more hidden</span>
-          <button onClick={() => window.open("/payment", "_self")}
-            className="flex items-center gap-1.5 px-5 py-2 bg-[#FCD535] text-black font-black rounded-full text-xs hover:scale-105 transition-transform shadow-[0_0_15px_rgba(252,213,53,0.3)]">
-            <Crown size={12} /> UNLOCK
-          </button>
+      {/* Lock overlay for free users */}
+      {!isProPlan && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center rounded-[22px]"
+          style={{ background: "radial-gradient(ellipse at center, rgba(11,14,20,0.85) 0%, rgba(11,14,20,0.6) 100%)" }}>
+          <div className="flex flex-col items-center text-center px-6 py-8 max-w-sm">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 bg-gradient-to-br from-[#FCD535]/20 to-[#FCD535]/5 border border-[#FCD535]/30">
+              <Lock size={28} className="text-[#FCD535]" />
+            </div>
+            <h3 className="text-lg font-black text-white tracking-wide">
+              {lang === "TH" ? "แผนเทรด AI" : "AI Trade Plan"}
+            </h3>
+            <p className="text-sm text-gray-400 mt-2 mb-5 leading-relaxed">
+              {lang === "TH"
+                ? "ดูสัญญาณซื้อ-ขาย จุดเข้า TP SL และ R:R สำหรับทุกหุ้นในพอร์ต"
+                : "See buy/sell signals, entry points, TP, SL, and R:R for all your stocks"}
+            </p>
+            <button
+              onClick={() => (window.location.href = "/payment")}
+              className="flex items-center gap-2 px-8 py-3 bg-[#FCD535] text-black font-black rounded-xl text-sm hover:scale-[1.03] transition-transform shadow-[0_0_20px_rgba(252,213,53,0.3)]"
+            >
+              <Crown size={16} />
+              {lang === "TH" ? "ปลดล็อก PRO" : "UNLOCK PRO"}
+            </button>
+          </div>
         </div>
       )}
     </div>
