@@ -113,6 +113,7 @@ ui.add_head_html('''
             --ax-text-muted: #8DA4B5;
         }
         body, .q-layout, .q-page-container, .q-page { 
+            color-scheme: dark;
             background-color: var(--ax-bg) !important;
             background-image: radial-gradient(circle at 80% -10%, rgba(86, 211, 255, 0.11), transparent 44%), radial-gradient(circle at 10% 10%, rgba(92, 242, 200, 0.09), transparent 38%) !important;
             color: #EAECEF !important;
@@ -141,6 +142,20 @@ ui.add_head_html('''
         }
         ::selection { background: var(--ax-accent); color: #00140f; }
         .q-page-container { padding-top: 0 !important; }
+        /* บังคับสี Dropdown Menu ทุกจุดในแอป */
+.q-menu, .q-menu.q-position-engine {
+    background-color: #0A131B !important;
+    border: 1px solid rgba(86, 211, 255, 0.2) !important;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8) !important;
+}
+.q-item, .q-item__label {
+    color: #EAECEF !important;
+    font-weight: 600 !important;
+}
+.q-item:hover, .q-item--active, .q-manual-focusable--focused {
+    background-color: rgba(86, 211, 255, 0.15) !important;
+    color: #3FD0FF !important;
+}         
     </style>
 ''', shared=True)
 
