@@ -383,7 +383,7 @@ async def handle_add_asset():
                         alert_input = ui.number(value=0, format='%.2f').classes('w-full').props('outlined dark')
                     with ui.column().classes('flex-1 gap-1 w-full'):
                         ui.label('Group').classes('text-[10px] text-gray-400 font-bold uppercase')
-                        group_select = ui.select(['ALL', 'DCA', 'DIV', 'TRADING'], value='ALL').classes('w-full').props('outlined dark popup-content-class="bg-[#0A131B] text-white"')
+                        group_select = ui.select(['ALL', 'DCA', 'DIV', 'TRADING'], value='ALL').classes('w-full').props('outlined dark behavior="menu" popup-content-class="bg-[#0A131B] text-white"')
             with ui.row().classes('w-full p-5 pt-0 gap-3 shrink-0 flex flex-col sm:flex-row'):
                 ui.button('Cancel', on_click=dialog.close).classes('w-full sm:flex-1 bg-[#2B3139] text-white font-bold py-3 rounded-lg hover:bg-gray-700 transition-colors order-last sm:order-first')
                 def save_new():
@@ -525,7 +525,7 @@ async def handle_edit(ticker):
                     valid_groups = ['ALL', 'DCA', 'DIV', 'TRADING']
                     safe_group = raw_group if raw_group in valid_groups else 'ALL'
                     
-                    asset_group_select = ui.select(valid_groups, value=safe_group).classes('w-full').props('outlined dark rounded popup-content-class="bg-[#0A131B] text-white"')
+                    asset_group_select = ui.select(valid_groups, value=safe_group).classes('w-full').props('outlined dark rounded behavior="menu" popup-content-class="bg-[#0A131B] text-white"')
             def save_edit():
                 new_alert = float(alert_input.value)
                 # เซฟข้อมูลต้นทุนและจำนวนหุ้นปกติ
