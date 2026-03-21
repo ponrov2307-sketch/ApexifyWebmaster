@@ -1,4 +1,4 @@
-﻿from nicegui import ui, app, run
+from nicegui import ui, app, run
 from pathlib import Path
 import logging
 from core.config import (
@@ -458,7 +458,7 @@ async def handle_edit(ticker):
                         alert_input = ui.number(value=default_alert, format='%.2f').classes('w-full').props('outlined dark')
                     with ui.column().classes('flex-1 gap-1 w-full'):
                         ui.label('Group').classes('text-[10px] text-gray-400 font-bold uppercase')
-                        group_select = ui.select(['ALL', 'DCA', 'DIV', 'TRADING'], value=asset.get('asset_group', 'ALL')).classes('w-full').props('outlined dark')
+                        group_select = ui.select(['ALL', 'DCA', 'DIV', 'TRADING'], value=asset.get('asset_group', 'ALL')).classes('w-full').props('outlined dark options-dark behavior=menu popup-content-style="background-color: #0A131B; color: white; border: 1px solid #39C8FF; border-radius: 8px;"')
 
             with ui.row().classes('w-full p-5 pt-0 gap-3 shrink-0 flex flex-col sm:flex-row'):
                 def do_del():
