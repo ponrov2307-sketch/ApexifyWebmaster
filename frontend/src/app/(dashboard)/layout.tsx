@@ -45,7 +45,24 @@ export default function DashboardLayout({
     const ping = () => api.post("/api/admin/heartbeat").catch(() => {});
     ping();
     const id = setInterval(ping, 30_000);
-    return () => clearInterval(id);
+
+    // Clear presence immediately when tab closes
+    const handleUnload = () => {
+      const token = localStorage.getItem("access_token");
+      if (token) {
+        fetch("/api/admin/offline", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          keepalive: true,
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener("beforeunload", handleUnload);
+
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("beforeunload", handleUnload);
+    };
   }, [user]);
 
   if (loading) {

@@ -365,7 +365,7 @@ def get_online_users():
             c.execute("""
                 SELECT user_id, username, role, status, last_seen
                 FROM users
-                WHERE last_seen >= NOW() - INTERVAL '2 minutes'
+                WHERE last_seen >= NOW() - INTERVAL '75 seconds'
                 ORDER BY last_seen DESC
             """)
             rows = c.fetchall()
@@ -376,7 +376,7 @@ def get_online_users():
                 "username": r[1] or f"User_{str(r[0])[-4:]}",
                 "role": r[2] or "free",
                 "status": r[3] or "active",
-                "last_seen": r[4].isoformat() if r[4] else None,
+                "last_seen": (r[4].isoformat() + "Z") if r[4] else None,
             }
             for r in rows
         ]

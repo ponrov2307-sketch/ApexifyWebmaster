@@ -15,6 +15,21 @@ async def heartbeat(user: CurrentUser):
     return {"ok": True}
 
 
+@router.post("/offline")
+async def offline(user: CurrentUser):
+    """Clear last_seen when user closes the app."""
+    from core.models import get_db_connection
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("UPDATE users SET last_seen = NULL WHERE user_id = %s", (user.user_id,))
+            conn.commit()
+            c.close()
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 @router.get("/online-users")
 async def online_users(user: CurrentUser):
     """Return users active in the last 2 minutes. Admin only."""
