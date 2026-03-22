@@ -1,6 +1,7 @@
 """Market data endpoints — charts, macro, indicators."""
 
 import math
+import time
 
 from fastapi import APIRouter, Query
 
@@ -112,6 +113,72 @@ async def macro_data(user: CurrentUser):
 async def support_resistance(ticker: str, user: CurrentUser):
     data = get_support_resistance(ticker)
     return data or {"support": [], "resistance": []}
+
+
+# ── S&P 500 Heatmap ──
+_SP500_BY_SECTOR: dict[str, list[str]] = {
+    "Technology":        ["AAPL", "MSFT", "NVDA", "AVGO", "ORCL", "AMD", "CSCO", "ADBE", "CRM", "INTU", "QCOM", "TXN", "NOW", "ACN", "MU", "AMAT", "LRCX", "KLAC", "MRVL", "PANW"],
+    "Communication":     ["GOOGL", "META", "NFLX", "CMCSA", "DIS", "T", "VZ", "TMUS", "CHTR", "EA", "TTWO"],
+    "Financials":        ["BRK-B", "JPM", "V", "MA", "BAC", "WFC", "GS", "MS", "SPGI", "BLK", "AXP", "CB", "PGR", "C", "USB", "TFC", "ICE", "CME"],
+    "Consumer Disc.":    ["AMZN", "TSLA", "HD", "MCD", "NKE", "BKNG", "LOW", "TJX", "SBUX", "CMG", "ORLY", "AZO", "GM", "F"],
+    "Healthcare":        ["LLY", "UNH", "JNJ", "ABBV", "MRK", "TMO", "ABT", "DHR", "BMY", "AMGN", "PFE", "MDT", "GILD", "ELV", "CVS", "ISRG", "BSX", "SYK"],
+    "Industrials":       ["GE", "CAT", "RTX", "HON", "UNP", "LMT", "DE", "BA", "ETN", "ITW", "UPS", "EMR", "GEV", "FDX", "NSC"],
+    "Consumer Staples":  ["WMT", "COST", "PG", "KO", "PEP", "PM", "MDLZ", "MO", "CL", "KHC", "STZ", "KR"],
+    "Energy":            ["XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "OXY", "VLO", "HES", "KMI"],
+    "Real Estate":       ["PLD", "AMT", "EQIX", "SPG", "DLR", "O", "PSA", "WELL", "AVB", "EQR", "CSGP"],
+    "Utilities":         ["NEE", "SO", "DUK", "AEP", "SRE", "EXC", "XEL", "WEC", "ES", "AWK"],
+    "Materials":         ["LIN", "SHW", "APD", "ECL", "NEM", "FCX", "NUE", "VMC", "MLM", "PPG", "ALB"],
+}
+
+_SP500_CACHE: dict = {}
+_SP500_CACHE_TIME: float = 0
+_SP500_CACHE_TTL = 300  # 5 minutes
+
+
+def _fetch_sp500_data() -> dict:
+    import yfinance as yf
+    all_tickers = [t for tickers in _SP500_BY_SECTOR.values() for t in tickers]
+    try:
+        raw = yf.download(all_tickers, period="2d", interval="1d", progress=False, auto_adjust=True)
+        closes = raw["Close"] if "Close" in raw else raw
+        result: dict[str, list[dict]] = {}
+        for sector, tickers in _SP500_BY_SECTOR.items():
+            stocks = []
+            for t in tickers:
+                try:
+                    col = t if t in closes.columns else None
+                    if col is None:
+                        continue
+                    vals = closes[col].dropna().values
+                    if len(vals) < 2:
+                        continue
+                    price = float(vals[-1])
+                    prev  = float(vals[-2])
+                    chg   = round((price - prev) / prev * 100, 2) if prev else 0.0
+                    stocks.append({"ticker": t, "price": round(price, 2), "change_pct": chg})
+                except Exception:
+                    continue
+            result[sector] = stocks
+        return result
+    except Exception:
+        return {}
+
+
+@router.get("/sp500-heatmap")
+async def sp500_heatmap(user: CurrentUser):
+    """Return S&P 500 stocks grouped by sector with today's price change. Cached 5 min."""
+    global _SP500_CACHE, _SP500_CACHE_TIME
+    import asyncio
+
+    now = time.time()
+    if _SP500_CACHE and (now - _SP500_CACHE_TIME) < _SP500_CACHE_TTL:
+        return _SP500_CACHE
+
+    data = await asyncio.to_thread(_fetch_sp500_data)
+    if data:
+        _SP500_CACHE = data
+        _SP500_CACHE_TIME = now
+    return data or _SP500_CACHE
 
 
 import pathlib as _pathlib

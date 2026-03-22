@@ -159,6 +159,8 @@ def _generate_matchmaker_batch(exclude_tickers: set[str], batch_size: int = 30, 
         "growth": "Focus on growth stocks: tech, biotech, fintech, AI, cloud, EV, clean energy. Include mid-caps and small-caps.",
         "dividend": "Focus on dividend stocks: utilities, REITs, consumer staples, telecoms, banks. Yield > 2% preferred.",
         "value": "Focus on value/hidden gems: undervalued mid-caps, international ADRs, niche sectors, turnaround plays.",
+        "momentum": "Focus on high-momentum stocks: recent breakouts, 52-week highs, strong relative strength, trending sectors. Mix large and mid-cap.",
+        "international": "Focus on international ADRs and globally diversified picks: European, Asian, Latin American companies listed on US exchanges. Include TSM, BABA, SHOP, SAP, TM, NVO, ASML, SE, MELI, etc.",
     }
 
     prompt = f"""
@@ -198,7 +200,7 @@ Rules:
 
 
 def generate_matchmaker_pool(exclude_tickers: set[str] | None = None) -> list[dict]:
-    """Generate a shared pool of ~100 diverse stock recommendations (4 batches of 25)."""
+    """Generate a shared pool of ~180 diverse stock recommendations (6 batches of 30)."""
     if not ai_client:
         return []
 
@@ -208,9 +210,9 @@ def generate_matchmaker_pool(exclude_tickers: set[str] | None = None) -> list[di
     all_recs: list[dict] = []
     seen_tickers: set[str] = set(exclude)
 
-    # Generate 4 batches with different styles to get ~100 unique stocks
-    for style in ["mixed", "growth", "dividend", "value"]:
-        batch = _generate_matchmaker_batch(seen_tickers, batch_size=25, style=style)
+    # Generate 6 batches with different styles to get ~180 unique stocks
+    for style in ["mixed", "growth", "dividend", "value", "momentum", "international"]:
+        batch = _generate_matchmaker_batch(seen_tickers, batch_size=30, style=style)
         for rec in batch:
             ticker = rec.get("ticker", "").upper()
             if ticker and ticker not in seen_tickers:
