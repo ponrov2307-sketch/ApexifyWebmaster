@@ -24,6 +24,7 @@ import {
   Globe,
   Sun,
   Eye,
+  ShieldCheck,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -200,6 +201,21 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             <Crown size={18} />
             <span className="font-bold tracking-wide">{tr("menu.upgrade", lang)}</span>
           </button>
+
+          {/* Admin panel — visible to admin only */}
+          {role === "admin" && (
+            <button
+              onClick={() => navigate("/admin")}
+              className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-2xl mb-1.5 transition-all ${
+                pathname === "/admin"
+                  ? "text-[#FF453A] bg-[#FF453A]/10 border border-[#FF453A]/20"
+                  : "text-[#FF453A]/70 hover:text-[#FF453A] hover:bg-[#FF453A]/10 border border-transparent"
+              }`}
+            >
+              <ShieldCheck size={18} />
+              <span className="font-bold tracking-wide">Admin</span>
+            </button>
+          )}
 
           {/* Market Pulse Widget */}
           <div className="mt-auto pt-4">

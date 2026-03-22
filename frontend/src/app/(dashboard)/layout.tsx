@@ -11,6 +11,7 @@ import CopilotFab from "@/components/copilot-fab";
 import NotificationCenter from "@/components/notification-center";
 import DailySummaryPopup from "@/components/daily-summary-popup";
 import { Loader2 } from "lucide-react";
+import api from "@/lib/api";
 
 export default function DashboardLayout({
   children,
@@ -37,6 +38,15 @@ export default function DashboardLayout({
       router.replace("/login");
     }
   }, [loading, user, router]);
+
+  // Heartbeat — update last_seen every 30s so admin can see who's online
+  useEffect(() => {
+    if (!user) return;
+    const ping = () => api.post("/api/admin/heartbeat").catch(() => {});
+    ping();
+    const id = setInterval(ping, 30_000);
+    return () => clearInterval(id);
+  }, [user]);
 
   if (loading) {
     return (

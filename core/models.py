@@ -326,4 +326,60 @@ def remove_watchlist_item(user_id: str, ticker: str):
         return True
     except Exception as e:
         print(f"❌ DB Error (remove_watchlist_item): {e}")
-        return False    
+        return False
+
+
+# ─── Online Presence ───
+
+def _ensure_last_seen_column():
+    """Add last_seen column to users table if it doesn't exist."""
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP")
+            conn.commit()
+            c.close()
+    except Exception as e:
+        print(f"❌ DB Error (ensure_last_seen): {e}")
+
+
+def update_user_last_seen(user_id: str):
+    _ensure_last_seen_column()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("UPDATE users SET last_seen = NOW() WHERE user_id = %s", (str(user_id),))
+            conn.commit()
+            c.close()
+        return True
+    except Exception as e:
+        print(f"❌ DB Error (update_user_last_seen): {e}")
+        return False
+
+
+def get_online_users():
+    _ensure_last_seen_column()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("""
+                SELECT user_id, username, role, status, last_seen
+                FROM users
+                WHERE last_seen >= NOW() - INTERVAL '2 minutes'
+                ORDER BY last_seen DESC
+            """)
+            rows = c.fetchall()
+            c.close()
+        return [
+            {
+                "user_id": r[0],
+                "username": r[1] or f"User_{str(r[0])[-4:]}",
+                "role": r[2] or "free",
+                "status": r[3] or "active",
+                "last_seen": r[4].isoformat() if r[4] else None,
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"❌ DB Error (get_online_users): {e}")
+        return []
