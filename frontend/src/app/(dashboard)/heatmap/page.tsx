@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePortfolio } from "@/lib/hooks";
 import { useLang, tr } from "@/lib/i18n";
 import { logoUrl, fmt } from "@/lib/dashboard-helpers";
@@ -8,49 +8,78 @@ import api from "@/lib/api";
 import { Grid3x3, Loader2, ArrowUpDown, TrendingUp, TrendingDown } from "lucide-react";
 import ProGate from "@/components/pro-gate";
 
-function heatColor(pnl: number): string {
-  if (pnl > 5)  return "#00C853";
-  if (pnl > 2)  return "#32D74B";
-  if (pnl > 0)  return "#4CAF50";
-  if (pnl > -2) return "#E53935";
-  if (pnl > -5) return "#FF453A";
+// ── Color helpers ──
+function heatColor(v: number): string {
+  if (v > 5)  return "#00C853";
+  if (v > 2)  return "#32D74B";
+  if (v > 0)  return "#4CAF50";
+  if (v > -2) return "#E53935";
+  if (v > -5) return "#FF453A";
   return "#CC0000";
 }
+function heatBg(v: number): string {
+  const c = v >= 0 ? "50,215,75" : "255,69,58";
+  const a = Math.min(0.55, 0.12 + Math.abs(v) * 0.07);
+  return `rgba(${c},${a})`;
+}
 
+// ── Treemap algorithm (slice-and-dice) ──
+interface TItem { id: string; weight: number; [k: string]: unknown; }
+interface TRect extends TItem { x: number; y: number; w: number; h: number; }
+
+function sliceDice(items: TItem[], x: number, y: number, w: number, h: number, horizontal: boolean): TRect[] {
+  if (!items.length) return [];
+  const total = items.reduce((s, i) => s + i.weight, 0);
+  if (!total) return [];
+  let cx = x, cy = y;
+  return items.map((item) => {
+    const ratio = item.weight / total;
+    let rw: number, rh: number;
+    if (horizontal) { rw = w * ratio; rh = h; }
+    else            { rw = w; rh = h * ratio; }
+    const rect: TRect = { ...item, x: cx, y: cy, w: rw, h: rh };
+    if (horizontal) cx += rw; else cy += rh;
+    return rect;
+  });
+}
+
+function treemap(items: TItem[], width: number, height: number): TRect[] {
+  if (!items.length) return [];
+  const sorted = [...items].sort((a, b) => b.weight - a.weight);
+  const total = sorted.reduce((s, i) => s + i.weight, 0);
+  if (!total) return [];
+
+  function split(nodes: TItem[], x: number, y: number, w: number, h: number, horiz: boolean): TRect[] {
+    if (nodes.length <= 1) return sliceDice(nodes, x, y, w, h, horiz);
+    const nodeTotal = nodes.reduce((s, i) => s + i.weight, 0);
+    // find split point closest to half
+    let acc = 0, splitIdx = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      acc += nodes[i].weight;
+      if (acc >= nodeTotal / 2) { splitIdx = i + 1; break; }
+    }
+    const half = nodes.slice(0, splitIdx);
+    const rest = nodes.slice(splitIdx);
+    const halfW = nodeTotal > 0 ? acc / nodeTotal : 0.5;
+    if (horiz) {
+      return [
+        ...split(half, x,           y, w * halfW,       h, !horiz),
+        ...split(rest, x + w * halfW, y, w * (1 - halfW), h, !horiz),
+      ];
+    } else {
+      return [
+        ...split(half, x, y,           w, h * halfW,       !horiz),
+        ...split(rest, x, y + h * halfW, w, h * (1 - halfW), !horiz),
+      ];
+    }
+  }
+  return split(sorted, 0, 0, width, height, width >= height);
+}
+
+// ── Types ──
 type SortKey = "ticker" | "alloc" | "pnl_pct" | "value" | "pnl";
-
-// ── S&P 500 types ──
 interface Sp500Stock { ticker: string; price: number; change_pct: number; }
 type Sp500Data = Record<string, Sp500Stock[]>;
-
-function Sp500HeatCell({ s }: { s: Sp500Stock }) {
-  const up = s.change_pct >= 0;
-  const color = heatColor(s.change_pct);
-  const bgAlpha = Math.min(0.45, 0.1 + Math.abs(s.change_pct) * 0.06);
-  return (
-    <div
-      className="relative border border-black/20 flex flex-col items-center justify-center transition-all hover:brightness-125 cursor-default group"
-      style={{
-        minWidth: 52,
-        minHeight: 52,
-        flex: "1 1 52px",
-        background: `rgba(${up ? "50,215,75" : "255,69,58"}, ${bgAlpha})`,
-      }}
-    >
-      <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ background: color }} />
-      <p className="relative text-[10px] font-black text-white leading-none">{s.ticker}</p>
-      <p className="relative text-[10px] font-black tabular-nums mt-0.5" style={{ color }}>
-        {up ? "+" : ""}{s.change_pct.toFixed(2)}%
-      </p>
-      {/* hover tooltip */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none">
-        <div className="bg-black/90 rounded-lg px-2 py-1 text-[10px] text-white whitespace-nowrap">
-          ${s.price.toFixed(2)}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function HeatmapPage() {
   const { lang } = useLang();
@@ -60,6 +89,19 @@ export default function HeatmapPage() {
   const [tab, setTab] = useState<"portfolio" | "sp500">("portfolio");
   const [sp500, setSp500] = useState<Sp500Data | null>(null);
   const [sp500Loading, setSp500Loading] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dims, setDims] = useState({ w: 900, h: 480 });
+
+  // measure container
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => {
+      setDims({ w: e.contentRect.width, h: Math.max(320, e.contentRect.width * 0.52) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     if (tab !== "sp500" || sp500) return;
@@ -71,30 +113,39 @@ export default function HeatmapPage() {
   }, [tab, sp500]);
 
   const totalValue = summary?.total_value || 0;
-
   const stocks = portfolio
     .map((s) => ({
-      ticker: s.ticker,
-      value: s.value,
-      price: s.price,
-      shares: s.shares,
-      avg_cost: s.avg_cost,
-      pnl_pct: s.pnl_pct,
-      pnl: s.pnl,
+      id: s.ticker, ticker: s.ticker, weight: s.value,
+      value: s.value, price: s.price, shares: s.shares,
+      avg_cost: s.avg_cost, pnl_pct: s.pnl_pct, pnl: s.pnl,
       alloc: totalValue > 0 ? (s.value / totalValue) * 100 : 0,
     }))
-    .sort((a, b) => b.alloc - a.alloc);
+    .filter((s) => s.weight > 0);
 
   const toggleSort = (key: SortKey) => {
     if (tableSort === key) setTableAsc(!tableAsc);
     else { setTableSort(key); setTableAsc(key === "ticker"); }
   };
-
   const tableSorted = [...stocks].sort((a, b) => {
     const dir = tableAsc ? 1 : -1;
     if (tableSort === "ticker") return a.ticker.localeCompare(b.ticker) * dir;
-    return ((a[tableSort] || 0) - (b[tableSort] || 0)) * dir;
+    return ((a[tableSort as keyof typeof a] as number || 0) - (b[tableSort as keyof typeof b] as number || 0)) * dir;
   });
+
+  // Portfolio treemap nodes
+  const portfolioRects = treemap(stocks, dims.w, dims.h);
+
+  // S&P 500 treemap — sectors as big blocks, stocks inside
+  const sp500Sectors = sp500
+    ? Object.entries(sp500).map(([name, stocks]) => ({
+        id: name,
+        name,
+        stocks,
+        weight: stocks.length,
+        avg: stocks.length ? stocks.reduce((s, x) => s + x.change_pct, 0) / stocks.length : 0,
+      }))
+    : [];
+  const sectorRects = treemap(sp500Sectors, dims.w, dims.h);
 
   return (
     <ProGate>
@@ -113,9 +164,7 @@ export default function HeatmapPage() {
         {/* Tab switcher */}
         <div className="flex gap-2 mb-5">
           {(["portfolio", "sp500"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
+            <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
                 tab === t
                   ? "bg-[#D0FD3E]/10 border border-[#D0FD3E]/30 text-[#D0FD3E]"
@@ -130,108 +179,87 @@ export default function HeatmapPage() {
         {/* ══ PORTFOLIO TAB ══ */}
         {tab === "portfolio" && (
           loading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-8 h-8 animate-spin text-[#D0FD3E]" />
-            </div>
+            <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#D0FD3E]" /></div>
           ) : stocks.length === 0 ? (
             <div className="border rounded-2xl p-12 text-center" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
               <Grid3x3 className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-              <h2 className="text-lg font-bold mb-2" style={{ color: "var(--text-primary)" }}>
-                {lang === "TH" ? "ยังไม่มีหุ้นในพอร์ต" : "No stocks in portfolio"}
-              </h2>
-              <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-                {lang === "TH" ? "เพิ่มหุ้นเพื่อดู Heatmap" : "Add stocks to see the heatmap"}
-              </p>
+              <p className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{lang === "TH" ? "ยังไม่มีหุ้นในพอร์ต" : "No stocks in portfolio"}</p>
             </div>
           ) : (
             <>
-              <div className="border rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
-                <div className="flex flex-wrap" style={{ minHeight: 400 }}>
-                  {stocks.map((s) => {
-                    const widthPct = Math.max(s.alloc, 8);
-                    const up = s.pnl_pct >= 0;
-                    const color = heatColor(s.pnl_pct);
-                    const bgAlpha = Math.min(0.4, 0.15 + Math.abs(s.pnl_pct) * 0.03);
-                    return (
-                      <div
-                        key={s.ticker}
-                        className="relative border border-black/30 flex flex-col items-center justify-center p-3 transition-all hover:brightness-125 cursor-default group overflow-hidden"
-                        style={{
-                          width: `${widthPct}%`,
-                          minWidth: 90,
-                          minHeight: stocks.length <= 4 ? 200 : 140,
-                          flexGrow: s.alloc,
-                          background: `rgba(${up ? "50,215,75" : "255,69,58"}, ${bgAlpha})`,
-                        }}
-                      >
-                        <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ background: color }} />
-                        <div className="relative z-10 text-center">
-                          <img src={logoUrl(s.ticker)} alt="" className="w-8 h-8 rounded-full mx-auto mb-1 border border-white/20" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                          <p className="text-xl font-black text-white drop-shadow-lg leading-none">{s.ticker}</p>
-                          <p className="text-2xl font-black tabular-nums mt-1.5 drop-shadow-lg" style={{ color }}>
+              {/* Treemap */}
+              <div ref={containerRef} className="border rounded-2xl overflow-hidden mb-4 relative" style={{ background: "#0a0e17", borderColor: "var(--border-default)", height: dims.h }}>
+                {portfolioRects.map((r) => {
+                  const s = r as typeof stocks[0] & TRect;
+                  const up = s.pnl_pct >= 0;
+                  const color = heatColor(s.pnl_pct);
+                  const showLogo = r.w > 70 && r.h > 70;
+                  const showLabel = r.w > 45 && r.h > 35;
+                  return (
+                    <div key={s.ticker}
+                      className="absolute group transition-all hover:z-10 hover:brightness-125 overflow-hidden"
+                      style={{ left: r.x, top: r.y, width: r.w, height: r.h, border: "1px solid rgba(0,0,0,0.6)", background: heatBg(s.pnl_pct) }}
+                    >
+                      <div className="absolute inset-0 opacity-15" style={{ background: color }} />
+                      {showLabel && (
+                        <div className="relative z-10 flex flex-col items-center justify-center h-full text-center px-1">
+                          {showLogo && (
+                            <img src={logoUrl(s.ticker)} alt="" className="w-7 h-7 rounded-full mb-1 border border-white/20"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                          )}
+                          <p className="font-black text-white leading-none" style={{ fontSize: Math.max(9, Math.min(16, r.w / 5)) }}>{s.ticker}</p>
+                          <p className="font-black tabular-nums" style={{ color, fontSize: Math.max(8, Math.min(18, r.w / 4.5)) }}>
                             {up ? "+" : ""}{s.pnl_pct.toFixed(2)}%
                           </p>
-                          <p className="text-xs text-white/70 font-bold mt-1 tabular-nums">
-                            {s.alloc.toFixed(1)}% {lang === "TH" ? "ของพอร์ต" : "of portfolio"}
-                          </p>
-                          <p className="text-[10px] text-white/40 font-mono mt-0.5 tabular-nums">
-                            ${s.value.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                          </p>
+                          {r.h > 80 && <p className="text-white/50 tabular-nums" style={{ fontSize: 9 }}>{s.alloc.toFixed(1)}%</p>}
                         </div>
-                        <div className="absolute bottom-2 left-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="bg-black/80 backdrop-blur-sm rounded-lg px-2 py-1 text-center">
-                            <span className="text-[10px] text-gray-300 tabular-nums">P&L: {up ? "+" : ""}${s.pnl.toFixed(2)}</span>
-                          </div>
+                      )}
+                      {/* hover tooltip */}
+                      <div className="absolute bottom-1 left-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                        <div className="bg-black/90 rounded px-1.5 py-1 text-center">
+                          <p className="text-[10px] text-white font-bold">{s.ticker}</p>
+                          <p className="text-[9px] tabular-nums" style={{ color }}>P&L: {up ? "+" : ""}${s.pnl.toFixed(2)} ({up ? "+" : ""}{s.pnl_pct.toFixed(2)}%)</p>
+                          <p className="text-[9px] text-gray-400 tabular-nums">${fmt(s.value)} · {s.alloc.toFixed(1)}%</p>
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Summary */}
+              <div className="border rounded-2xl p-4 mb-4 flex items-center justify-between text-sm" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+                <span style={{ color: "var(--text-muted)" }}>
+                  {stocks.length} {lang === "TH" ? "หุ้น" : "stocks"} · {lang === "TH" ? "มูลค่ารวม" : "Total"} ${totalValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                </span>
+                <div className="flex items-center gap-4 text-xs">
+                  {[["rgba(50,215,75,0.5)", lang === "TH" ? "กำไร" : "Profit"], ["rgba(255,69,58,0.5)", lang === "TH" ? "ขาดทุน" : "Loss"]].map(([bg, label]) => (
+                    <div key={label} className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded" style={{ background: bg as string }} />
+                      <span style={{ color: "var(--text-muted)" }}>{label}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="border rounded-2xl p-4 mb-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
-                <div className="flex items-center justify-between text-sm">
-                  <span style={{ color: "var(--text-muted)" }}>
-                    {stocks.length} {lang === "TH" ? "หุ้น" : "stocks"} · {lang === "TH" ? "มูลค่ารวม" : "Total"} ${totalValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                  </span>
-                  <div className="flex items-center gap-4 text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 rounded" style={{ background: "rgba(50,215,75,0.4)" }} />
-                      <span style={{ color: "var(--text-muted)" }}>{lang === "TH" ? "กำไร" : "Profit"}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 rounded" style={{ background: "rgba(255,69,58,0.4)" }} />
-                      <span style={{ color: "var(--text-muted)" }}>{lang === "TH" ? "ขาดทุน" : "Loss"}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
+              {/* Table */}
               <div className="border rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
                 <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: "1px solid var(--border-default)" }}>
                   <ArrowUpDown size={14} style={{ color: "var(--text-muted)" }} />
-                  <span className="text-xs font-black tracking-widest uppercase" style={{ color: "var(--text-muted)" }}>
-                    {lang === "TH" ? "รายละเอียดหุ้น" : "HOLDINGS DETAIL"}
-                  </span>
+                  <span className="text-xs font-black tracking-widest uppercase" style={{ color: "var(--text-muted)" }}>{lang === "TH" ? "รายละเอียดหุ้น" : "HOLDINGS DETAIL"}</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                        {[
-                          { key: "ticker" as SortKey, label: lang === "TH" ? "หุ้น" : "Stock" },
-                          { key: "alloc"   as SortKey, label: lang === "TH" ? "สัดส่วน" : "Alloc %" },
-                          { key: "value"   as SortKey, label: lang === "TH" ? "มูลค่า" : "Value" },
-                          { key: "pnl_pct" as SortKey, label: "P&L %" },
-                          { key: "pnl"     as SortKey, label: "P&L $" },
-                        ].map((col) => (
-                          <th key={col.key} className="px-4 py-2.5 text-left text-[10px] font-black tracking-wider uppercase cursor-pointer hover:opacity-80" style={{ color: "var(--text-dim)" }} onClick={() => toggleSort(col.key)}>
-                            {col.label} {tableSort === col.key && (tableAsc ? "↑" : "↓")}
+                        {([["ticker","Stock/หุ้น"],["alloc","Alloc %"],["value","Value/มูลค่า"],["pnl_pct","P&L %"],["pnl","P&L $"]] as [SortKey,string][]).map(([key, label]) => (
+                          <th key={key} className="px-4 py-2.5 text-left text-[10px] font-black tracking-wider uppercase cursor-pointer hover:opacity-80" style={{ color: "var(--text-dim)" }} onClick={() => toggleSort(key)}>
+                            {label} {tableSort === key && (tableAsc ? "↑" : "↓")}
                           </th>
                         ))}
-                        <th className="px-4 py-2.5 text-left text-[10px] font-black tracking-wider uppercase" style={{ color: "var(--text-dim)" }}>{lang === "TH" ? "ราคา" : "Price"}</th>
-                        <th className="px-4 py-2.5 text-left text-[10px] font-black tracking-wider uppercase" style={{ color: "var(--text-dim)" }}>{lang === "TH" ? "จำนวน" : "Shares"}</th>
-                        <th className="px-4 py-2.5 text-left text-[10px] font-black tracking-wider uppercase" style={{ color: "var(--text-dim)" }}>{lang === "TH" ? "ต้นทุน" : "Avg Cost"}</th>
+                        {["Price/ราคา","Shares/จำนวน","Avg Cost/ต้นทุน"].map((h) => (
+                          <th key={h} className="px-4 py-2.5 text-left text-[10px] font-black tracking-wider uppercase" style={{ color: "var(--text-dim)" }}>{h}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
@@ -288,43 +316,80 @@ export default function HeatmapPage() {
               <p className="text-gray-500">Failed to load S&P 500 data</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <>
               {/* Legend */}
-              <div className="flex items-center gap-4 text-xs px-1 mb-2">
-                <span style={{ color: "var(--text-muted)" }}>% change today</span>
-                {[["#CC0000","< -5%"], ["#FF453A","-2–5%"], ["#E53935","0–2%"], ["#4CAF50","0–2%"], ["#32D74B","2–5%"], ["#00C853","> 5%"]].map(([c, l]) => (
+              <div className="flex flex-wrap items-center gap-3 text-[10px] mb-3 px-1">
+                <span className="text-gray-500 font-bold">% today:</span>
+                {([["#CC0000","< -5%"],["#FF453A","-2~5%"],["#E53935","0~2%"],["#4CAF50","0~2%"],["#32D74B","2~5%"],["#00C853","> 5%"]] as [string,string][]).map(([c,l]) => (
                   <div key={l} className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded-sm" style={{ background: c }} />
-                    <span style={{ color: "var(--text-muted)" }}>{l}</span>
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: c }} />
+                    <span className="text-gray-500">{l}</span>
                   </div>
                 ))}
               </div>
 
-              {Object.entries(sp500).map(([sector, sectorStocks]) => {
-                if (!sectorStocks?.length) return null;
-                const avg = sectorStocks.reduce((s, x) => s + x.change_pct, 0) / sectorStocks.length;
-                const avgUp = avg >= 0;
-                return (
-                  <div key={sector} className="border rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
-                    {/* Sector header */}
-                    <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
-                      <span className="text-xs font-black tracking-wider uppercase" style={{ color: "var(--text-secondary)" }}>{sector}</span>
-                      <span className="text-xs font-black tabular-nums" style={{ color: avgUp ? "#32D74B" : "#FF453A" }}>
-                        avg {avgUp ? "+" : ""}{avg.toFixed(2)}%
-                      </span>
+              {/* Big treemap — sectors as rectangles, stocks inside */}
+              <div className="border rounded-2xl overflow-hidden mb-3" style={{ background: "#0a0e17", borderColor: "var(--border-default)", height: dims.h, position: "relative" }}>
+                {sectorRects.map((sr) => {
+                  const sector = sr as typeof sp500Sectors[0] & TRect;
+                  const avgUp = sector.avg >= 0;
+                  const avgColor = heatColor(sector.avg);
+                  // layout stocks inside this sector rect
+                  const stockItems = sector.stocks.map((s) => ({ ...s, id: s.ticker, weight: 1 }));
+                  const stockRects = treemap(stockItems, sr.w - 2, sr.h - 22);
+                  return (
+                    <div key={sector.name} className="absolute overflow-hidden" style={{ left: sr.x, top: sr.y, width: sr.w, height: sr.h, border: "2px solid #0a0e17" }}>
+                      {/* Sector header */}
+                      <div className="flex items-center justify-between px-1.5 absolute top-0 left-0 right-0 z-10" style={{ height: 20, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}>
+                        <span className="text-[9px] font-black text-white tracking-wider truncate">{sector.name}</span>
+                        <span className="text-[9px] font-black tabular-nums shrink-0 ml-1" style={{ color: avgColor }}>
+                          {avgUp ? "+" : ""}{sector.avg.toFixed(2)}%
+                        </span>
+                      </div>
+                      {/* Stocks */}
+                      <div className="absolute" style={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                        {stockRects.map((stockR) => {
+                          const s = stockR as Sp500Stock & TRect;
+                          const up = s.change_pct >= 0;
+                          const color = heatColor(s.change_pct);
+                          const showTicker = stockR.w > 28 && stockR.h > 20;
+                          const showPct = stockR.w > 35 && stockR.h > 32;
+                          return (
+                            <div key={s.ticker}
+                              className="absolute group overflow-hidden hover:z-20 hover:brightness-125 transition-all"
+                              style={{ left: stockR.x, top: stockR.y, width: stockR.w, height: stockR.h, border: "1px solid rgba(0,0,0,0.5)", background: heatBg(s.change_pct) }}
+                            >
+                              <div className="absolute inset-0 opacity-10" style={{ background: color }} />
+                              {showTicker && (
+                                <div className="relative z-10 flex flex-col items-center justify-center h-full text-center">
+                                  <p className="font-black text-white leading-none" style={{ fontSize: Math.max(7, Math.min(11, stockR.w / 4.5)) }}>{s.ticker}</p>
+                                  {showPct && (
+                                    <p className="font-black tabular-nums" style={{ color, fontSize: Math.max(7, Math.min(10, stockR.w / 5)) }}>
+                                      {up ? "+" : ""}{s.change_pct.toFixed(2)}%
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                              {/* Tooltip */}
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-30 pointer-events-none">
+                                <div className="bg-black/95 border border-white/10 rounded-lg px-2 py-1 text-[10px] whitespace-nowrap shadow-xl">
+                                  <p className="text-white font-black">{s.ticker}</p>
+                                  <p className="tabular-nums" style={{ color }}>{up ? "+" : ""}{s.change_pct.toFixed(2)}%</p>
+                                  <p className="text-gray-400">${s.price.toFixed(2)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    {/* Stock grid */}
-                    <div className="flex flex-wrap">
-                      {sectorStocks.map((s) => <Sp500HeatCell key={s.ticker} s={s} />)}
-                    </div>
-                  </div>
-                );
-              })}
-
-              <p className="text-[10px] text-gray-600 text-center pt-2">
-                Data cached 5 min · {Object.values(sp500).flat().length} stocks across {Object.keys(sp500).length} sectors
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-gray-600 text-center">
+                {Object.values(sp500).flat().length} stocks · {Object.keys(sp500).length} sectors · cached 5 min
               </p>
-            </div>
+            </>
           )
         )}
       </div>
