@@ -114,11 +114,12 @@ export default function AddStockModal({ open, onClose, onAdded }: Props) {
               value={group}
               onChange={(e) => setGroup(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none focus:border-[#D0FD3E]/40"
+              style={{ backgroundColor: "#0D1117", color: "#FFFFFF", colorScheme: "dark" }}
             >
-              <option value="ALL">ALL</option>
-              <option value="DCA">DCA</option>
-              <option value="DIV">DIV</option>
-              <option value="TRADING">TRADING</option>
+              <option value="ALL" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>ALL</option>
+              <option value="DCA" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>DCA</option>
+              <option value="DIV" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>DIV</option>
+              <option value="TRADING" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>TRADING</option>
             </select>
           </div>
 

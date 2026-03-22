@@ -217,16 +217,17 @@ export default function EditStockModal({
                 value={group}
                 onChange={(e) => setGroup(e.target.value)}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none focus:border-[#D0FD3E]/40"
+                style={{ backgroundColor: "#0D1117", color: "#FFFFFF", colorScheme: "dark" }}
               >
-                <option value="ALL">ALL</option>
-                <option value="DCA">DCA</option>
-                <option value="DIV">DIV</option>
-                <option value="TRADING">TRADING</option>
-                <option value="TECH">TECH</option>
-                <option value="FINANCE">FINANCE</option>
-                <option value="ENERGY">ENERGY</option>
-                <option value="ETF">ETF</option>
-                <option value="CRYPTO">CRYPTO</option>
+                <option value="ALL" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>ALL</option>
+                <option value="DCA" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>DCA</option>
+                <option value="DIV" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>DIV</option>
+                <option value="TRADING" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>TRADING</option>
+                <option value="TECH" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>TECH</option>
+                <option value="FINANCE" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>FINANCE</option>
+                <option value="ENERGY" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>ENERGY</option>
+                <option value="ETF" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>ETF</option>
+                <option value="CRYPTO" style={{ backgroundColor: "#0D1117", color: "#FFFFFF" }}>CRYPTO</option>
               </select>
             </div>
           </div>

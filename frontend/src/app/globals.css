@@ -18,6 +18,7 @@
 }
 
 :root {
+  color-scheme: dark;
   --bg-primary: #080B10;
   --bg-card: #0D1117;
   --bg-card-hover: #1C2128;
@@ -37,7 +38,19 @@
   --input-bg: rgba(255, 255, 255, 0.05);
 }
 
+/* ─── Native select dropdown styling ─── */
+select option {
+  background-color: #0D1117;
+  color: #FFFFFF;
+}
+
+[data-theme="light"] select option {
+  background-color: #FFFFFF;
+  color: #1F2328;
+}
+
 [data-theme="light"] {
+  color-scheme: light;
   --bg-primary: #F5F6F8;
   --bg-card: #FFFFFF;
   --bg-card-hover: #F0F1F3;
