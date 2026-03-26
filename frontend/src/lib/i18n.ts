@@ -49,6 +49,7 @@ const dict: Record<string, { TH: string; EN: string }> = {
   "menu.simulator": { TH: "จำลองผลตอบแทน", EN: "Simulator" },
   "menu.alerts": { TH: "แจ้งเตือนราคา", EN: "Alerts" },
   "menu.news": { TH: "ข่าวสาร", EN: "News" },
+  "menu.feed": { TH: "ชุมชน", EN: "Community" },
   "menu.earnings": { TH: "ปฏิทินงบ", EN: "Earnings" },
   "menu.benchmark": { TH: "เทียบ Benchmark", EN: "Benchmark" },
   "menu.export": { TH: "ส่งออกข้อมูล", EN: "Export" },

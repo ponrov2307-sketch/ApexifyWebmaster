@@ -383,3 +383,197 @@ def get_online_users():
     except Exception as e:
         print(f"❌ DB Error (get_online_users): {e}")
         return []
+
+
+# ── Social Feed ──────────────────────────────────────────────
+
+def _ensure_social_tables():
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS social_posts (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(64) NOT NULL,
+                    username VARCHAR(100) NOT NULL,
+                    role VARCHAR(20) DEFAULT 'free',
+                    content TEXT NOT NULL,
+                    ticker VARCHAR(20),
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    like_count INTEGER DEFAULT 0
+                )
+            """)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS social_comments (
+                    id SERIAL PRIMARY KEY,
+                    post_id INTEGER NOT NULL REFERENCES social_posts(id) ON DELETE CASCADE,
+                    user_id VARCHAR(64) NOT NULL,
+                    username VARCHAR(100) NOT NULL,
+                    role VARCHAR(20) DEFAULT 'free',
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS social_likes (
+                    post_id INTEGER NOT NULL,
+                    user_id VARCHAR(64) NOT NULL,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    PRIMARY KEY(post_id, user_id)
+                )
+            """)
+            conn.commit()
+            c.close()
+    except Exception as e:
+        print(f"❌ DB Error (_ensure_social_tables): {e}")
+
+
+def get_feed_posts(offset: int = 0, limit: int = 20, viewer_id: str = "") -> list:
+    _ensure_social_tables()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("""
+                SELECT p.id, p.user_id, p.username, p.role, p.content, p.ticker,
+                       p.created_at, p.like_count,
+                       EXISTS(SELECT 1 FROM social_likes l WHERE l.post_id = p.id AND l.user_id = %s) AS liked,
+                       (SELECT COUNT(*) FROM social_comments sc WHERE sc.post_id = p.id) AS comment_count
+                FROM social_posts p
+                ORDER BY p.created_at DESC
+                OFFSET %s LIMIT %s
+            """, (str(viewer_id), offset, limit))
+            rows = c.fetchall()
+            c.close()
+        return [
+            {
+                "id": r[0], "user_id": r[1], "username": r[2], "role": r[3],
+                "content": r[4], "ticker": r[5],
+                "created_at": (r[6].isoformat() + "Z") if r[6] else None,
+                "like_count": r[7] or 0, "liked": bool(r[8]),
+                "comment_count": r[9] or 0,
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"❌ DB Error (get_feed_posts): {e}")
+        return []
+
+
+def create_feed_post(user_id: str, username: str, role: str, content: str, ticker: str | None = None) -> int | None:
+    _ensure_social_tables()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO social_posts (user_id, username, role, content, ticker)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
+            """, (str(user_id), username, role, content, ticker))
+            post_id = c.fetchone()[0]
+            conn.commit()
+            c.close()
+        return post_id
+    except Exception as e:
+        print(f"❌ DB Error (create_feed_post): {e}")
+        return None
+
+
+def delete_feed_post(post_id: int, user_id: str, is_admin: bool = False) -> bool:
+    _ensure_social_tables()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            if is_admin:
+                c.execute("DELETE FROM social_posts WHERE id = %s", (post_id,))
+            else:
+                c.execute("DELETE FROM social_posts WHERE id = %s AND user_id = %s", (post_id, str(user_id)))
+            deleted = c.rowcount > 0
+            conn.commit()
+            c.close()
+        return deleted
+    except Exception as e:
+        print(f"❌ DB Error (delete_feed_post): {e}")
+        return False
+
+
+def toggle_feed_like(post_id: int, user_id: str) -> dict:
+    _ensure_social_tables()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            # Check if already liked
+            c.execute("SELECT 1 FROM social_likes WHERE post_id = %s AND user_id = %s", (post_id, str(user_id)))
+            exists = c.fetchone()
+            if exists:
+                c.execute("DELETE FROM social_likes WHERE post_id = %s AND user_id = %s", (post_id, str(user_id)))
+                c.execute("UPDATE social_posts SET like_count = GREATEST(0, like_count - 1) WHERE id = %s", (post_id,))
+                liked = False
+            else:
+                c.execute("INSERT INTO social_likes (post_id, user_id) VALUES (%s, %s)", (post_id, str(user_id)))
+                c.execute("UPDATE social_posts SET like_count = like_count + 1 WHERE id = %s", (post_id,))
+                liked = True
+            c.execute("SELECT like_count FROM social_posts WHERE id = %s", (post_id,))
+            count = c.fetchone()[0] or 0
+            conn.commit()
+            c.close()
+        return {"liked": liked, "count": count}
+    except Exception as e:
+        print(f"❌ DB Error (toggle_feed_like): {e}")
+        return {"liked": False, "count": 0}
+
+
+def get_post_comments(post_id: int) -> list:
+    _ensure_social_tables()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("""
+                SELECT id, user_id, username, role, content, created_at
+                FROM social_comments WHERE post_id = %s
+                ORDER BY created_at ASC
+            """, (post_id,))
+            rows = c.fetchall()
+            c.close()
+        return [
+            {
+                "id": r[0], "user_id": r[1], "username": r[2], "role": r[3],
+                "content": r[4], "created_at": (r[5].isoformat() + "Z") if r[5] else None,
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"❌ DB Error (get_post_comments): {e}")
+        return []
+
+
+def add_post_comment(post_id: int, user_id: str, username: str, role: str, content: str) -> int | None:
+    _ensure_social_tables()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO social_comments (post_id, user_id, username, role, content)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
+            """, (post_id, str(user_id), username, role, content))
+            cid = c.fetchone()[0]
+            conn.commit()
+            c.close()
+        return cid
+    except Exception as e:
+        print(f"❌ DB Error (add_post_comment): {e}")
+        return None
+
+
+def count_user_posts_today(user_id: str) -> int:
+    _ensure_social_tables()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("""
+                SELECT COUNT(*) FROM social_posts
+                WHERE user_id = %s AND created_at >= CURRENT_DATE
+            """, (str(user_id),))
+            count = c.fetchone()[0] or 0
+            c.close()
+        return count
+    except Exception as e:
+        return 0

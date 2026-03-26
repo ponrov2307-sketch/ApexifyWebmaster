@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import admin, ai, alerts, auth, market, news, portfolio, watchlist
+from api.routers import admin, ai, alerts, auth, feed, market, news, portfolio, watchlist
 
 
 @asynccontextmanager
@@ -37,6 +37,7 @@ app.add_middleware(
 app.include_router(admin.router)
 app.include_router(ai.router)
 app.include_router(auth.router)
+app.include_router(feed.router)
 app.include_router(portfolio.router)
 app.include_router(market.router)
 app.include_router(alerts.router)
