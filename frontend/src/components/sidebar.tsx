@@ -25,6 +25,8 @@ import {
   Sun,
   Eye,
   ShieldCheck,
+  Calendar,
+  Swords,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -78,6 +80,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { icon: TrendingUp, label: tr("menu.simulator", lang), href: "/sp500", pro: true },
     { icon: Bell, label: tr("menu.alerts", lang), href: "/alerts", pro: true },
     { icon: Newspaper, label: tr("menu.news", lang), href: "/news", pro: true },
+    { icon: Calendar, label: tr("menu.earnings", lang), href: "/earnings", pro: true },
+    { icon: Swords, label: tr("menu.benchmark", lang), href: "/benchmark", pro: true },
     { icon: Download, label: tr("menu.export", lang), href: "/export", pro: true },
   ];
 

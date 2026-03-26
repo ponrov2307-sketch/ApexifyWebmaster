@@ -130,6 +130,46 @@ _SP500_BY_SECTOR: dict[str, list[str]] = {
     "Materials":         ["LIN", "SHW", "APD", "ECL", "NEM", "FCX", "NUE", "VMC", "MLM", "PPG", "ALB"],
 }
 
+# Approximate market cap weights (in $B) for realistic treemap sizing
+_SP500_MCAP: dict[str, int] = {
+    # Technology
+    "AAPL": 3400, "MSFT": 3100, "NVDA": 2800, "AVGO": 800, "ORCL": 400, "AMD": 220, "CSCO": 230,
+    "ADBE": 210, "CRM": 260, "INTU": 180, "QCOM": 190, "TXN": 180, "NOW": 200, "ACN": 210,
+    "MU": 110, "AMAT": 150, "LRCX": 100, "KLAC": 95, "MRVL": 70, "PANW": 120,
+    # Communication
+    "GOOGL": 2100, "META": 1500, "NFLX": 350, "CMCSA": 150, "DIS": 180, "T": 150, "VZ": 170,
+    "TMUS": 250, "CHTR": 50, "EA": 40, "TTWO": 30,
+    # Financials
+    "BRK-B": 900, "JPM": 600, "V": 550, "MA": 420, "BAC": 300, "WFC": 200, "GS": 160,
+    "MS": 150, "SPGI": 150, "BLK": 140, "AXP": 170, "CB": 110, "PGR": 130, "C": 120,
+    "USB": 65, "TFC": 55, "ICE": 80, "CME": 80,
+    # Consumer Discretionary
+    "AMZN": 2000, "TSLA": 800, "HD": 380, "MCD": 210, "NKE": 110, "BKNG": 160, "LOW": 140,
+    "TJX": 120, "SBUX": 100, "CMG": 80, "ORLY": 65, "AZO": 55, "GM": 50, "F": 40,
+    # Healthcare
+    "LLY": 750, "UNH": 500, "JNJ": 380, "ABBV": 310, "MRK": 270, "TMO": 200, "ABT": 200,
+    "DHR": 170, "BMY": 110, "AMGN": 150, "PFE": 140, "MDT": 110, "GILD": 110, "ELV": 100,
+    "CVS": 80, "ISRG": 170, "BSX": 120, "SYK": 130,
+    # Industrials
+    "GE": 200, "CAT": 180, "RTX": 160, "HON": 140, "UNP": 150, "LMT": 120, "DE": 110,
+    "BA": 130, "ETN": 130, "ITW": 80, "UPS": 100, "EMR": 70, "GEV": 80, "FDX": 60, "NSC": 55,
+    # Consumer Staples
+    "WMT": 600, "COST": 380, "PG": 380, "KO": 270, "PEP": 220, "PM": 200, "MDLZ": 90,
+    "MO": 90, "CL": 75, "KHC": 40, "STZ": 45, "KR": 40,
+    # Energy
+    "XOM": 470, "CVX": 270, "COP": 130, "SLB": 60, "EOG": 70, "MPC": 55, "PSX": 50,
+    "OXY": 40, "VLO": 45, "HES": 45, "KMI": 45,
+    # Real Estate
+    "PLD": 100, "AMT": 90, "EQIX": 80, "SPG": 55, "DLR": 45, "O": 50, "PSA": 50,
+    "WELL": 45, "AVB": 30, "EQR": 25, "CSGP": 35,
+    # Utilities
+    "NEE": 160, "SO": 95, "DUK": 85, "AEP": 50, "SRE": 50, "EXC": 40, "XEL": 35,
+    "WEC": 30, "ES": 25, "AWK": 28,
+    # Materials
+    "LIN": 210, "SHW": 85, "APD": 65, "ECL": 55, "NEM": 50, "FCX": 60, "NUE": 35,
+    "VMC": 35, "MLM": 35, "PPG": 30, "ALB": 10,
+}
+
 _SP500_CACHE: dict = {}
 _SP500_CACHE_TIME: float = 0
 _SP500_CACHE_TTL = 300  # 5 minutes
@@ -155,7 +195,7 @@ def _fetch_sp500_data() -> dict:
                     price = float(vals[-1])
                     prev  = float(vals[-2])
                     chg   = round((price - prev) / prev * 100, 2) if prev else 0.0
-                    stocks.append({"ticker": t, "price": round(price, 2), "change_pct": chg})
+                    stocks.append({"ticker": t, "price": round(price, 2), "change_pct": chg, "mcap": _SP500_MCAP.get(t, 30)})
                 except Exception:
                     continue
             result[sector] = stocks
@@ -296,3 +336,136 @@ async def stock_logo(ticker: str):
     save_path = _LOGO_DIR / f"{clean}.svg"
     save_path.write_text(svg, encoding="utf-8")
     return Response(content=svg, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
+# ── Earnings Calendar ──
+_EARNINGS_CACHE: dict = {}
+_EARNINGS_CACHE_TIME: float = 0
+_EARNINGS_CACHE_TTL = 3600  # 1 hour
+
+
+def _fetch_earnings(tickers: list[str]) -> list[dict]:
+    """Fetch next earnings dates for a list of tickers using yfinance."""
+    import yfinance as yf
+    from datetime import datetime, timezone
+
+    results = []
+    now = datetime.now(timezone.utc)
+
+    for ticker in tickers:
+        try:
+            t = yf.Ticker(ticker)
+            cal = t.calendar
+            if cal is None or (hasattr(cal, "empty") and cal.empty):
+                continue
+
+            # yfinance calendar can be a dict or DataFrame
+            if isinstance(cal, dict):
+                date_val = cal.get("Earnings Date")
+                if isinstance(date_val, list) and date_val:
+                    date_val = date_val[0]
+                eps_est = cal.get("Earnings Average") or cal.get("EPS Estimate")
+                rev_est = cal.get("Revenue Average") or cal.get("Revenue Estimate")
+            else:
+                # DataFrame format
+                if "Earnings Date" in cal.columns:
+                    date_val = cal["Earnings Date"].iloc[0] if len(cal) > 0 else None
+                elif len(cal.columns) > 0:
+                    date_val = cal.iloc[0, 0] if len(cal) > 0 else None
+                else:
+                    date_val = None
+                eps_est = None
+                rev_est = None
+
+            if date_val is None:
+                continue
+
+            # Parse date
+            if hasattr(date_val, "isoformat"):
+                date_str = date_val.strftime("%Y-%m-%d")
+            else:
+                date_str = str(date_val)[:10]
+
+            results.append({
+                "ticker": ticker.upper(),
+                "date": date_str,
+                "eps_estimate": round(float(eps_est), 2) if eps_est else None,
+                "revenue_estimate": round(float(rev_est), 0) if rev_est else None,
+            })
+        except Exception:
+            continue
+
+    results.sort(key=lambda x: x["date"])
+    return results
+
+
+@router.get("/earnings-calendar")
+async def earnings_calendar(user: CurrentUser):
+    """Return upcoming earnings dates for user's portfolio stocks. Cached 1 hour."""
+    import asyncio
+    global _EARNINGS_CACHE, _EARNINGS_CACHE_TIME
+
+    now = time.time()
+    uid = user.user_id
+
+    # Per-user cache key
+    cache_key = f"earnings_{uid}"
+    if cache_key in _EARNINGS_CACHE and (now - _EARNINGS_CACHE_TIME) < _EARNINGS_CACHE_TTL:
+        return _EARNINGS_CACHE[cache_key]
+
+    # Get user's portfolio tickers
+    from core.models import get_portfolio
+    portfolio = get_portfolio(uid)
+    tickers = [p["ticker"] for p in portfolio]
+
+    if not tickers:
+        return {"earnings": []}
+
+    data = await asyncio.to_thread(_fetch_earnings, tickers)
+    result = {"earnings": data}
+    _EARNINGS_CACHE[cache_key] = result
+    _EARNINGS_CACHE_TIME = now
+    return result
+
+
+# ── Portfolio vs Benchmark ──
+_BENCH_CACHE: dict = {}
+_BENCH_CACHE_TTL = 600  # 10 minutes
+
+
+@router.get("/benchmark")
+async def portfolio_benchmark(
+    user: CurrentUser,
+    period: str = Query("1y", pattern="^(1mo|3mo|6mo|1y|2y|3y|5y)$"),
+    benchmark: str = Query("SPY"),
+):
+    """Return portfolio growth vs benchmark (SPY/QQQ). Cached 10 min."""
+    import asyncio
+    from services.yahoo_finance import get_portfolio_historical_growth
+    from core.models import get_portfolio
+
+    now = time.time()
+    uid = user.user_id
+    cache_key = f"bench_{uid}_{period}_{benchmark}"
+
+    if cache_key in _BENCH_CACHE and (now - _BENCH_CACHE.get(f"{cache_key}_t", 0)) < _BENCH_CACHE_TTL:
+        return _BENCH_CACHE[cache_key]
+
+    portfolio = get_portfolio(uid)
+    if not portfolio:
+        return {"labels": [], "portfolio_values": [], "benchmark_values": [], "benchmark_ticker": benchmark, "portfolio_metrics": {}, "benchmark_metrics": {}}
+
+    portfolio_items = [{"ticker": p["ticker"], "shares": p["shares"]} for p in portfolio]
+
+    # Map period labels
+    period_map = {"1mo": "1mo", "3mo": "3mo", "6mo": "6mo", "1y": "1y", "2y": "2y", "3y": "3y", "5y": "5y"}
+    yf_period = period_map.get(period, "1y")
+
+    data = await asyncio.to_thread(
+        get_portfolio_historical_growth,
+        portfolio_items, period=yf_period, interval="1d", benchmark=benchmark.upper()
+    )
+
+    _BENCH_CACHE[cache_key] = data
+    _BENCH_CACHE[f"{cache_key}_t"] = now
+    return data

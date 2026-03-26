@@ -78,7 +78,7 @@ function treemap(items: TItem[], width: number, height: number): TRect[] {
 
 // ── Types ──
 type SortKey = "ticker" | "alloc" | "pnl_pct" | "value" | "pnl";
-interface Sp500Stock { ticker: string; price: number; change_pct: number; }
+interface Sp500Stock { ticker: string; price: number; change_pct: number; mcap: number; }
 type Sp500Data = Record<string, Sp500Stock[]>;
 
 export default function HeatmapPage() {
@@ -97,7 +97,7 @@ export default function HeatmapPage() {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([e]) => {
-      setDims({ w: e.contentRect.width, h: Math.max(320, e.contentRect.width * 0.52) });
+      setDims({ w: e.contentRect.width, h: Math.max(400, e.contentRect.width * 0.58) });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -135,13 +135,13 @@ export default function HeatmapPage() {
   // Portfolio treemap nodes
   const portfolioRects = treemap(stocks, dims.w, dims.h);
 
-  // S&P 500 treemap — sectors as big blocks, stocks inside
+  // S&P 500 treemap — sectors as big blocks, stocks inside (sized by market cap)
   const sp500Sectors = sp500
     ? Object.entries(sp500).map(([name, stocks]) => ({
         id: name,
         name,
         stocks,
-        weight: stocks.length,
+        weight: stocks.reduce((s, x) => s + (x.mcap || 1), 0),
         avg: stocks.length ? stocks.reduce((s, x) => s + x.change_pct, 0) / stocks.length : 0,
       }))
     : [];
@@ -335,10 +335,10 @@ export default function HeatmapPage() {
                   const avgUp = sector.avg >= 0;
                   const avgColor = heatColor(sector.avg);
                   // layout stocks inside this sector rect
-                  const stockItems = sector.stocks.map((s) => ({ ...s, id: s.ticker, weight: 1 }));
+                  const stockItems = sector.stocks.map((s) => ({ ...s, id: s.ticker, weight: s.mcap || 1 }));
                   const stockRects = treemap(stockItems, sr.w - 2, sr.h - 22);
                   return (
-                    <div key={sector.name} className="absolute overflow-hidden" style={{ left: sr.x, top: sr.y, width: sr.w, height: sr.h, border: "2px solid #0a0e17" }}>
+                    <div key={sector.name} className="absolute overflow-hidden" style={{ left: sr.x, top: sr.y, width: sr.w, height: sr.h, border: "3px solid #0a0e17" }}>
                       {/* Sector header */}
                       <div className="flex items-center justify-between px-1.5 absolute top-0 left-0 right-0 z-10" style={{ height: 20, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}>
                         <span className="text-[9px] font-black text-white tracking-wider truncate">{sector.name}</span>

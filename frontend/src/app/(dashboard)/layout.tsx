@@ -19,7 +19,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { user, loading, loadFromStorage } = useAuth();
+  const { user, loading, loadFromStorage, refreshUser } = useAuth();
   const { theme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -31,7 +31,8 @@ export default function DashboardLayout({
 
   useEffect(() => {
     loadFromStorage();
-  }, [loadFromStorage]);
+    refreshUser(); // sync role from server in case it changed since last login
+  }, [loadFromStorage, refreshUser]);
 
   useEffect(() => {
     if (!loading && !user) {
