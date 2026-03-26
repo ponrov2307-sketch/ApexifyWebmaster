@@ -51,6 +51,7 @@ const dict: Record<string, { TH: string; EN: string }> = {
   "menu.news": { TH: "ข่าวสาร", EN: "News" },
   "menu.feed": { TH: "ชุมชน", EN: "Community" },
   "menu.earnings": { TH: "ปฏิทินงบ", EN: "Earnings" },
+  "menu.econ_calendar": { TH: "ปฏิทินเศรษฐกิจ", EN: "Econ Calendar" },
   "menu.benchmark": { TH: "เทียบ Benchmark", EN: "Benchmark" },
   "menu.export": { TH: "ส่งออกข้อมูล", EN: "Export" },
   "menu.upgrade": { TH: "อัปเกรด", EN: "Upgrade" },

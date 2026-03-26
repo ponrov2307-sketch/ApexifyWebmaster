@@ -247,6 +247,76 @@ async def sp500_heatmap(user: CurrentUser):
     return data or _SP500_CACHE
 
 
+# ── Economic Calendar ──
+_ECON_EVENTS = [
+    # 2026 Q1
+    {"date": "2026-01-10", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-01-14", "event": "CPI (Consumer Price Index)", "category": "inflation", "impact": "high"},
+    {"date": "2026-01-29", "event": "FOMC Rate Decision", "category": "fed", "impact": "high"},
+    {"date": "2026-01-30", "event": "GDP Q4 Advance", "category": "gdp", "impact": "high"},
+    {"date": "2026-02-07", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-02-12", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-02-20", "event": "FOMC Minutes", "category": "fed", "impact": "medium"},
+    {"date": "2026-02-27", "event": "GDP Q4 Second Estimate", "category": "gdp", "impact": "medium"},
+    {"date": "2026-03-06", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-03-11", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-03-18", "event": "FOMC Rate Decision", "category": "fed", "impact": "high"},
+    {"date": "2026-03-26", "event": "GDP Q4 Final", "category": "gdp", "impact": "medium"},
+    # 2026 Q2
+    {"date": "2026-04-03", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-04-10", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-04-09", "event": "FOMC Minutes", "category": "fed", "impact": "medium"},
+    {"date": "2026-04-29", "event": "GDP Q1 Advance", "category": "gdp", "impact": "high"},
+    {"date": "2026-05-01", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-05-06", "event": "FOMC Rate Decision", "category": "fed", "impact": "high"},
+    {"date": "2026-05-12", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-05-28", "event": "GDP Q1 Second Estimate", "category": "gdp", "impact": "medium"},
+    {"date": "2026-06-05", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-06-10", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-06-17", "event": "FOMC Rate Decision", "category": "fed", "impact": "high"},
+    {"date": "2026-06-25", "event": "GDP Q1 Final", "category": "gdp", "impact": "medium"},
+    # 2026 Q3
+    {"date": "2026-07-02", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-07-14", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-07-29", "event": "FOMC Rate Decision", "category": "fed", "impact": "high"},
+    {"date": "2026-07-30", "event": "GDP Q2 Advance", "category": "gdp", "impact": "high"},
+    {"date": "2026-08-07", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-08-12", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-08-19", "event": "FOMC Minutes", "category": "fed", "impact": "medium"},
+    {"date": "2026-09-04", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-09-10", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-09-16", "event": "FOMC Rate Decision", "category": "fed", "impact": "high"},
+    {"date": "2026-09-25", "event": "GDP Q2 Final", "category": "gdp", "impact": "medium"},
+    # 2026 Q4
+    {"date": "2026-10-02", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-10-13", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-10-07", "event": "FOMC Minutes", "category": "fed", "impact": "medium"},
+    {"date": "2026-10-29", "event": "GDP Q3 Advance", "category": "gdp", "impact": "high"},
+    {"date": "2026-11-06", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-11-04", "event": "FOMC Rate Decision", "category": "fed", "impact": "high"},
+    {"date": "2026-11-12", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-11-25", "event": "GDP Q3 Second Estimate", "category": "gdp", "impact": "medium"},
+    {"date": "2026-12-04", "event": "Non-Farm Payrolls", "category": "employment", "impact": "high"},
+    {"date": "2026-12-10", "event": "CPI", "category": "inflation", "impact": "high"},
+    {"date": "2026-12-16", "event": "FOMC Rate Decision", "category": "fed", "impact": "high"},
+    {"date": "2026-12-23", "event": "GDP Q3 Final", "category": "gdp", "impact": "medium"},
+]
+
+
+@router.get("/economic-calendar")
+async def economic_calendar(user: CurrentUser):
+    """Return upcoming economic events."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc).date()
+    past_limit = now - timedelta(days=7)
+
+    events = [
+        e for e in sorted(_ECON_EVENTS, key=lambda x: x["date"])
+        if e["date"] >= past_limit.isoformat()
+    ]
+    return {"events": events}
+
+
 import pathlib as _pathlib
 
 _LOGO_DIR = _pathlib.Path(__file__).resolve().parent.parent.parent / "static" / "logos"

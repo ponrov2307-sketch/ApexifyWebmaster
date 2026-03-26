@@ -120,6 +120,46 @@ body {
 .text-force-white { color: #FFFFFF !important; }
 .text-force-dark { color: #080B10 !important; }
 
+/* ─── Light mode overrides for hardcoded Tailwind colors ─── */
+[data-theme="light"] .text-white {
+  color: var(--text-primary) !important;
+}
+[data-theme="light"] .text-gray-400,
+[data-theme="light"] .text-gray-500 {
+  color: var(--text-muted) !important;
+}
+[data-theme="light"] .text-gray-600 {
+  color: var(--text-dim) !important;
+}
+[data-theme="light"] .bg-white\/5,
+[data-theme="light"] .bg-white\/10 {
+  background-color: var(--input-bg) !important;
+}
+[data-theme="light"] .border-white\/5,
+[data-theme="light"] .border-white\/8,
+[data-theme="light"] .border-white\/10,
+[data-theme="light"] .border-white\/20 {
+  border-color: var(--border-default) !important;
+}
+[data-theme="light"] .hover\:text-white:hover {
+  color: var(--text-primary) !important;
+}
+[data-theme="light"] .hover\:bg-white\/5:hover {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+/* Sidebar light mode */
+[data-theme="light"] aside {
+  background: var(--sidebar-bg) !important;
+  border-color: var(--border-default) !important;
+}
+/* Modal light overrides */
+[data-theme="light"] .bg-\[\#0D1117\] {
+  background-color: var(--bg-card) !important;
+}
+[data-theme="light"] .bg-\[\#0a0e17\] {
+  background-color: var(--bg-surface) !important;
+}
+
 /* Smooth page transitions */
 .page-enter {
   opacity: 0;

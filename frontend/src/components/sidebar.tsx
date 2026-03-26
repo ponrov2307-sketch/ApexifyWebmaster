@@ -26,6 +26,7 @@ import {
   Eye,
   ShieldCheck,
   Calendar,
+  CalendarDays,
   Swords,
   MessageSquare,
 } from "lucide-react";
@@ -83,6 +84,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { icon: Newspaper, label: tr("menu.news", lang), href: "/news", pro: true },
     { icon: MessageSquare, label: tr("menu.feed", lang), href: "/feed", pro: false },
     { icon: Calendar, label: tr("menu.earnings", lang), href: "/earnings", pro: true },
+    { icon: CalendarDays, label: tr("menu.econ_calendar", lang), href: "/economic-calendar", pro: true },
     { icon: Swords, label: tr("menu.benchmark", lang), href: "/benchmark", pro: true },
     { icon: Download, label: tr("menu.export", lang), href: "/export", pro: true },
   ];
