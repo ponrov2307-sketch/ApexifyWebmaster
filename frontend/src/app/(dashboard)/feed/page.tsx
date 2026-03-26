@@ -430,7 +430,7 @@ export default function FeedPage() {
             return (
               <div
                 key={post.id}
-                className="border rounded-2xl overflow-hidden transition-all hover:border-white/10"
+                className="group border rounded-2xl overflow-hidden transition-all hover:border-white/10"
                 style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}
               >
                 {/* Post header */}
