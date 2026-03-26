@@ -563,6 +563,24 @@ def add_post_comment(post_id: int, user_id: str, username: str, role: str, conte
         return None
 
 
+def delete_post_comment(comment_id: int, user_id: str, is_admin: bool = False) -> bool:
+    _ensure_social_tables()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            if is_admin:
+                c.execute("DELETE FROM social_comments WHERE id = %s", (comment_id,))
+            else:
+                c.execute("DELETE FROM social_comments WHERE id = %s AND user_id = %s", (comment_id, str(user_id)))
+            deleted = c.rowcount > 0
+            conn.commit()
+            c.close()
+        return deleted
+    except Exception as e:
+        print(f"❌ DB Error (delete_post_comment): {e}")
+        return False
+
+
 def count_user_posts_today(user_id: str) -> int:
     _ensure_social_tables()
     try:

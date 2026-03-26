@@ -9,6 +9,7 @@ from core.models import (
     count_user_posts_today,
     create_feed_post,
     delete_feed_post,
+    delete_post_comment,
     get_feed_posts,
     get_post_comments,
     toggle_feed_like,
@@ -80,6 +81,15 @@ async def like_post(post_id: int, user: CurrentUser):
 async def list_comments(post_id: int, user: CurrentUser):
     comments = get_post_comments(post_id)
     return {"comments": comments}
+
+
+@router.delete("/{post_id}/comments/{comment_id}")
+async def delete_comment(post_id: int, comment_id: int, user: CurrentUser):
+    is_admin = user.role.lower() == "admin"
+    deleted = delete_post_comment(comment_id, user.user_id, is_admin=is_admin)
+    if not deleted:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Comment not found or not authorized")
+    return {"ok": True}
 
 
 @router.post("/{post_id}/comments")

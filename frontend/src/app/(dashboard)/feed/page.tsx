@@ -124,10 +124,14 @@ function CommentSection({
   postId,
   commentCount,
   canPost,
+  viewerId,
+  viewerRole,
 }: {
   postId: number;
   commentCount: number;
   canPost: boolean;
+  viewerId: string;
+  viewerRole: string;
 }) {
   const [open, setOpen] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -189,30 +193,47 @@ function CommentSection({
               No comments yet
             </p>
           ) : (
-            comments.map((c) => (
-              <div key={c.id} className="flex gap-2">
-                <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black shrink-0"
-                  style={{ background: "var(--input-bg)", color: "var(--text-muted)" }}
-                >
-                  {c.username.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs font-bold" style={{ color: "var(--text-primary)" }}>
-                      {c.username}
-                    </span>
-                    <RoleBadge role={c.role} />
-                    <span className="text-[10px]" style={{ color: "var(--text-dim)" }}>
-                      {timeAgo(c.created_at)}
-                    </span>
+            comments.map((c) => {
+              const canDeleteComment = c.user_id === viewerId || viewerRole === "admin";
+              return (
+                <div key={c.id} className="group/comment flex gap-2">
+                  <div
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black shrink-0"
+                    style={{ background: "var(--input-bg)", color: "var(--text-muted)" }}
+                  >
+                    {c.username.slice(0, 2).toUpperCase()}
                   </div>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>
-                    {c.content}
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-bold" style={{ color: "var(--text-primary)" }}>
+                        {c.username}
+                      </span>
+                      <RoleBadge role={c.role} />
+                      <span className="text-[10px]" style={{ color: "var(--text-dim)" }}>
+                        {timeAgo(c.created_at)}
+                      </span>
+                      {canDeleteComment && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.delete(`/api/feed/${postId}/comments/${c.id}`);
+                              load();
+                            } catch { /* ignore */ }
+                          }}
+                          className="opacity-0 group-hover/comment:opacity-100 transition-opacity p-0.5 rounded hover:bg-[#FF453A]/10"
+                          style={{ color: "var(--text-dim)" }}
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>
+                      {c.content}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
 
           {/* Comment input */}
@@ -512,7 +533,7 @@ export default function FeedPage() {
                   </button>
 
                   {/* Comments */}
-                  <CommentSection postId={post.id} commentCount={post.comment_count} canPost={canPost} />
+                  <CommentSection postId={post.id} commentCount={post.comment_count} canPost={canPost} viewerId={user?.user_id || ""} viewerRole={role} />
                 </div>
               </div>
             );
