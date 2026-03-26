@@ -120,104 +120,91 @@ body {
 .text-force-white { color: #FFFFFF !important; }
 .text-force-dark { color: #080B10 !important; }
 
-/* ─── Light mode: ALL text must be opaque/readable ─── */
+/* ─── Light mode: comprehensive override using attribute selectors ─── */
 
-/* Text colors → dark in light mode */
-[data-theme="light"] .text-white {
+/* 1. ALL text-white class → dark */
+[data-theme="light"] [class*="text-white"] {
   color: #1F2328 !important;
 }
-[data-theme="light"] .text-gray-400,
-[data-theme="light"] .text-gray-500 {
+/* Gray text → proper light mode grays */
+[data-theme="light"] [class*="text-gray-3"],
+[data-theme="light"] [class*="text-gray-4"],
+[data-theme="light"] [class*="text-gray-5"] {
   color: #656D76 !important;
 }
-[data-theme="light"] .text-gray-600 {
+[data-theme="light"] [class*="text-gray-6"] {
   color: #8B949E !important;
 }
-[data-theme="light"] .hover\:text-white:hover {
-  color: #1F2328 !important;
-}
 
-/* Hardcoded hex text colors → dark */
-[data-theme="light"] [style*="color: rgb(255, 255, 255)"],
-[data-theme="light"] [style*="color:#FFFFFF"],
-[data-theme="light"] [style*="color: #FFFFFF"],
-[data-theme="light"] [style*="color: white"] {
-  color: #1F2328 !important;
-}
-
-/* Backgrounds: dark hex → light card */
-[data-theme="light"] .bg-\[\#0D1117\],
-[data-theme="light"] .bg-\[\#080B10\],
-[data-theme="light"] .bg-\[\#0a0e17\],
-[data-theme="light"] .bg-\[\#0B0E14\],
-[data-theme="light"] .bg-\[\#0E1C24\] {
-  background-color: var(--bg-card) !important;
-}
-[data-theme="light"] [style*="background: #0D1117"],
-[data-theme="light"] [style*="background-color: #0D1117"],
-[data-theme="light"] [style*="background: rgb(13, 17, 23)"] {
+/* 2. Dark hex backgrounds → light */
+[data-theme="light"] [class*="bg-[#0"],
+[data-theme="light"] [class*="bg-[#1"],
+[data-theme="light"] [class*="from-[#0"],
+[data-theme="light"] [class*="from-[#1"],
+[data-theme="light"] [class*="to-[#0"],
+[data-theme="light"] [class*="to-[#1"] {
   background: var(--bg-card) !important;
 }
 
-/* Semi-transparent white bg → light input bg */
-[data-theme="light"] .bg-white\/5,
-[data-theme="light"] .bg-white\/10,
-[data-theme="light"] .bg-white\/15 {
+/* 3. Semi-transparent white backgrounds → light equivalents */
+[data-theme="light"] [class*="bg-white/"] {
   background-color: rgba(0, 0, 0, 0.04) !important;
 }
-[data-theme="light"] .hover\:bg-white\/5:hover,
-[data-theme="light"] .hover\:bg-white\/10:hover {
-  background-color: rgba(0, 0, 0, 0.06) !important;
+[data-theme="light"] [class*="hover:bg-white/"]:hover {
+  background-color: rgba(0, 0, 0, 0.07) !important;
 }
 
-/* Borders */
-[data-theme="light"] .border-white\/5,
-[data-theme="light"] .border-white\/8,
-[data-theme="light"] .border-white\/10,
-[data-theme="light"] .border-white\/15,
-[data-theme="light"] .border-white\/20 {
+/* 4. White borders → light borders */
+[data-theme="light"] [class*="border-white/"] {
   border-color: rgba(0, 0, 0, 0.1) !important;
 }
 
-/* Sidebar */
+/* 5. Black overlays → light overlays */
+[data-theme="light"] [class*="bg-black/"] {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* 6. Sidebar */
 [data-theme="light"] aside {
+  background: #FFFFFF !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* 7. Inline style dark backgrounds */
+[data-theme="light"] [style*="background: var(--sidebar-bg)"],
+[data-theme="light"] [style*="background: var(--header-bg)"] {
   background: var(--sidebar-bg) !important;
-  border-color: var(--border-default) !important;
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05) !important;
 }
 
-/* Dashboard cards with gradient bg → light gradient */
-[data-theme="light"] [style*="background: linear-gradient"],
-[data-theme="light"] [style*="background:linear-gradient"] {
-  background: linear-gradient(135deg, #f0f2f5, #e8ebf0) !important;
+/* 8. hover:text-white → dark on hover */
+[data-theme="light"] [class*="hover:text-white"]:hover {
+  color: #1F2328 !important;
 }
 
-/* Ticker tape */
-[data-theme="light"] .bg-black\/60,
-[data-theme="light"] .bg-black\/80,
-[data-theme="light"] .bg-black\/90,
-[data-theme="light"] .bg-black\/95 {
-  background-color: rgba(255, 255, 255, 0.95) !important;
+/* 9. Shadows for light mode depth */
+[data-theme="light"] [class*="shadow-"] {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06) !important;
 }
 
-/* Placeholder text */
-[data-theme="light"] .placeholder\:text-gray-600::placeholder {
+/* 10. Placeholder text */
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
   color: #8B949E !important;
 }
 
-/* Stock card inline dark backgrounds */
-[data-theme="light"] [style*="background: var(--sidebar-bg)"] {
-  background: var(--sidebar-bg) !important;
-}
+/* ─── Preserve accent colors (DON'T override) ─── */
+[data-theme="light"] [class*="text-[#D0FD3E]"] { color: #5a8a00 !important; }
+[data-theme="light"] [class*="text-[#32D74B]"] { color: #1a8a2e !important; }
+[data-theme="light"] [class*="text-[#FF453A]"] { color: #d42a20 !important; }
+[data-theme="light"] [class*="text-[#39C8FF]"] { color: #0088cc !important; }
+[data-theme="light"] [class*="text-[#AF52DE]"] { color: #8a2ec0 !important; }
+[data-theme="light"] [class*="text-[#FF9500]"] { color: #cc7700 !important; }
+[data-theme="light"] [class*="text-[#FCD535]"] { color: #9a8000 !important; }
 
-/* Keep accent text colors readable (green/red/lime) — DON'T override these */
-/* .text-\[\#32D74B\], .text-\[\#FF453A\], .text-\[\#D0FD3E\] stay as-is */
-
-/* Shadows for light mode depth */
-[data-theme="light"] .shadow-2xl,
-[data-theme="light"] .shadow-xl {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
-}
+/* Accent backgrounds stay vibrant */
+[data-theme="light"] [class*="bg-[#D0FD3E]"] { background-color: #D0FD3E !important; }
+[data-theme="light"] [class*="bg-[#39C8FF]"] { background-color: #39C8FF !important; }
 
 /* Smooth page transitions */
 .page-enter {
