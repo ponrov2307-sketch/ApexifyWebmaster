@@ -120,44 +120,103 @@ body {
 .text-force-white { color: #FFFFFF !important; }
 .text-force-dark { color: #080B10 !important; }
 
-/* ─── Light mode overrides for hardcoded Tailwind colors ─── */
+/* ─── Light mode: ALL text must be opaque/readable ─── */
+
+/* Text colors → dark in light mode */
 [data-theme="light"] .text-white {
-  color: var(--text-primary) !important;
+  color: #1F2328 !important;
 }
 [data-theme="light"] .text-gray-400,
 [data-theme="light"] .text-gray-500 {
-  color: var(--text-muted) !important;
+  color: #656D76 !important;
 }
 [data-theme="light"] .text-gray-600 {
-  color: var(--text-dim) !important;
+  color: #8B949E !important;
 }
+[data-theme="light"] .hover\:text-white:hover {
+  color: #1F2328 !important;
+}
+
+/* Hardcoded hex text colors → dark */
+[data-theme="light"] [style*="color: rgb(255, 255, 255)"],
+[data-theme="light"] [style*="color:#FFFFFF"],
+[data-theme="light"] [style*="color: #FFFFFF"],
+[data-theme="light"] [style*="color: white"] {
+  color: #1F2328 !important;
+}
+
+/* Backgrounds: dark hex → light card */
+[data-theme="light"] .bg-\[\#0D1117\],
+[data-theme="light"] .bg-\[\#080B10\],
+[data-theme="light"] .bg-\[\#0a0e17\],
+[data-theme="light"] .bg-\[\#0B0E14\],
+[data-theme="light"] .bg-\[\#0E1C24\] {
+  background-color: var(--bg-card) !important;
+}
+[data-theme="light"] [style*="background: #0D1117"],
+[data-theme="light"] [style*="background-color: #0D1117"],
+[data-theme="light"] [style*="background: rgb(13, 17, 23)"] {
+  background: var(--bg-card) !important;
+}
+
+/* Semi-transparent white bg → light input bg */
 [data-theme="light"] .bg-white\/5,
-[data-theme="light"] .bg-white\/10 {
-  background-color: var(--input-bg) !important;
+[data-theme="light"] .bg-white\/10,
+[data-theme="light"] .bg-white\/15 {
+  background-color: rgba(0, 0, 0, 0.04) !important;
 }
+[data-theme="light"] .hover\:bg-white\/5:hover,
+[data-theme="light"] .hover\:bg-white\/10:hover {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Borders */
 [data-theme="light"] .border-white\/5,
 [data-theme="light"] .border-white\/8,
 [data-theme="light"] .border-white\/10,
+[data-theme="light"] .border-white\/15,
 [data-theme="light"] .border-white\/20 {
-  border-color: var(--border-default) !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
 }
-[data-theme="light"] .hover\:text-white:hover {
-  color: var(--text-primary) !important;
-}
-[data-theme="light"] .hover\:bg-white\/5:hover {
-  background-color: rgba(0, 0, 0, 0.04) !important;
-}
-/* Sidebar light mode */
+
+/* Sidebar */
 [data-theme="light"] aside {
   background: var(--sidebar-bg) !important;
   border-color: var(--border-default) !important;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05) !important;
 }
-/* Modal light overrides */
-[data-theme="light"] .bg-\[\#0D1117\] {
-  background-color: var(--bg-card) !important;
+
+/* Dashboard cards with gradient bg → light gradient */
+[data-theme="light"] [style*="background: linear-gradient"],
+[data-theme="light"] [style*="background:linear-gradient"] {
+  background: linear-gradient(135deg, #f0f2f5, #e8ebf0) !important;
 }
-[data-theme="light"] .bg-\[\#0a0e17\] {
-  background-color: var(--bg-surface) !important;
+
+/* Ticker tape */
+[data-theme="light"] .bg-black\/60,
+[data-theme="light"] .bg-black\/80,
+[data-theme="light"] .bg-black\/90,
+[data-theme="light"] .bg-black\/95 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* Placeholder text */
+[data-theme="light"] .placeholder\:text-gray-600::placeholder {
+  color: #8B949E !important;
+}
+
+/* Stock card inline dark backgrounds */
+[data-theme="light"] [style*="background: var(--sidebar-bg)"] {
+  background: var(--sidebar-bg) !important;
+}
+
+/* Keep accent text colors readable (green/red/lime) — DON'T override these */
+/* .text-\[\#32D74B\], .text-\[\#FF453A\], .text-\[\#D0FD3E\] stay as-is */
+
+/* Shadows for light mode depth */
+[data-theme="light"] .shadow-2xl,
+[data-theme="light"] .shadow-xl {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
 }
 
 /* Smooth page transitions */
