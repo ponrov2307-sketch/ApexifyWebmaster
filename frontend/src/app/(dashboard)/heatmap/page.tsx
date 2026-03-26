@@ -23,24 +23,22 @@ function heatBg(v: number): string {
   return `rgba(${c},${a})`;
 }
 
-// ── Treemap algorithm (slice-and-dice) ──
+// ── Squarified Treemap (Bruls-Huizing-van Wijk) ──
 interface TItem { id: string; weight: number; [k: string]: unknown; }
 interface TRect extends TItem { x: number; y: number; w: number; h: number; }
 
-function sliceDice(items: TItem[], x: number, y: number, w: number, h: number, horizontal: boolean): TRect[] {
-  if (!items.length) return [];
-  const total = items.reduce((s, i) => s + i.weight, 0);
-  if (!total) return [];
-  let cx = x, cy = y;
-  return items.map((item) => {
-    const ratio = item.weight / total;
-    let rw: number, rh: number;
-    if (horizontal) { rw = w * ratio; rh = h; }
-    else            { rw = w; rh = h * ratio; }
-    const rect: TRect = { ...item, x: cx, y: cy, w: rw, h: rh };
-    if (horizontal) cx += rw; else cy += rh;
-    return rect;
-  });
+function worstRatio(row: number[], side: number): number {
+  const s = row.reduce((a, b) => a + b, 0);
+  if (s === 0 || side === 0) return Infinity;
+  const s2 = s * s;
+  const w2 = side * side;
+  let worst = 0;
+  for (const r of row) {
+    if (r === 0) continue;
+    const ratio = Math.max((w2 * r) / s2, s2 / (w2 * r));
+    if (ratio > worst) worst = ratio;
+  }
+  return worst;
 }
 
 function treemap(items: TItem[], width: number, height: number): TRect[] {
@@ -49,31 +47,70 @@ function treemap(items: TItem[], width: number, height: number): TRect[] {
   const total = sorted.reduce((s, i) => s + i.weight, 0);
   if (!total) return [];
 
-  function split(nodes: TItem[], x: number, y: number, w: number, h: number, horiz: boolean): TRect[] {
-    if (nodes.length <= 1) return sliceDice(nodes, x, y, w, h, horiz);
-    const nodeTotal = nodes.reduce((s, i) => s + i.weight, 0);
-    // find split point closest to half
-    let acc = 0, splitIdx = 0;
-    for (let i = 0; i < nodes.length; i++) {
-      acc += nodes[i].weight;
-      if (acc >= nodeTotal / 2) { splitIdx = i + 1; break; }
+  // Normalize areas so they sum to total pixel area
+  const area = width * height;
+  const areas = sorted.map((it) => (it.weight / total) * area);
+
+  const rects: TRect[] = [];
+
+  function squarify(dataIdx: number[], x: number, y: number, w: number, h: number) {
+    if (!dataIdx.length) return;
+    if (dataIdx.length === 1) {
+      rects.push({ ...sorted[dataIdx[0]], x, y, w, h });
+      return;
     }
-    const half = nodes.slice(0, splitIdx);
-    const rest = nodes.slice(splitIdx);
-    const halfW = nodeTotal > 0 ? acc / nodeTotal : 0.5;
-    if (horiz) {
-      return [
-        ...split(half, x,           y, w * halfW,       h, !horiz),
-        ...split(rest, x + w * halfW, y, w * (1 - halfW), h, !horiz),
-      ];
-    } else {
-      return [
-        ...split(half, x, y,           w, h * halfW,       !horiz),
-        ...split(rest, x, y + h * halfW, w, h * (1 - halfW), !horiz),
-      ];
+
+    const side = Math.min(w, h);
+    const isHoriz = w >= h; // lay row along short side
+    let row: number[] = [];
+    let rowAreas: number[] = [];
+    let rest = [...dataIdx];
+
+    // Greedily add items to current row while aspect ratio improves
+    row.push(rest.shift()!);
+    rowAreas.push(areas[row[0]]);
+
+    while (rest.length > 0) {
+      const candidate = rest[0];
+      const newRowAreas = [...rowAreas, areas[candidate]];
+      if (worstRatio(newRowAreas, side) <= worstRatio(rowAreas, side)) {
+        row.push(rest.shift()!);
+        rowAreas = newRowAreas;
+      } else {
+        break;
+      }
+    }
+
+    // Layout this row
+    const rowTotal = rowAreas.reduce((a, b) => a + b, 0);
+    const rowThickness = side > 0 ? rowTotal / side : 0;
+
+    let cx = x, cy = y;
+    for (let i = 0; i < row.length; i++) {
+      const itemLen = rowThickness > 0 ? rowAreas[i] / rowThickness : 0;
+      if (isHoriz) {
+        // row fills left side vertically
+        rects.push({ ...sorted[row[i]], x: cx, y: cy, w: rowThickness, h: itemLen });
+        cy += itemLen;
+      } else {
+        // row fills top side horizontally
+        rects.push({ ...sorted[row[i]], x: cx, y: cy, w: itemLen, h: rowThickness });
+        cx += itemLen;
+      }
+    }
+
+    // Recurse on remaining space
+    if (rest.length > 0) {
+      if (isHoriz) {
+        squarify(rest, x + rowThickness, y, w - rowThickness, h);
+      } else {
+        squarify(rest, x, y + rowThickness, w, h - rowThickness);
+      }
     }
   }
-  return split(sorted, 0, 0, width, height, width >= height);
+
+  squarify(sorted.map((_, i) => i), 0, 0, width, height);
+  return rects;
 }
 
 // ── Types ──
@@ -97,7 +134,7 @@ export default function HeatmapPage() {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([e]) => {
-      setDims({ w: e.contentRect.width, h: Math.max(400, e.contentRect.width * 0.58) });
+      setDims({ w: e.contentRect.width, h: Math.max(500, Math.min(800, e.contentRect.width * 0.55)) });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -149,7 +186,7 @@ export default function HeatmapPage() {
 
   return (
     <ProGate>
-      <div className="max-w-6xl mx-auto">
+      <div className="w-full">
         {/* Header */}
         <div className="mb-5">
           <h1 className="text-2xl font-black tracking-wide flex items-center gap-3" style={{ color: "var(--text-primary)" }}>
