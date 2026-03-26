@@ -354,7 +354,7 @@ export default function ChartModal({ ticker, open, onClose }: Props) {
     <div className="fixed inset-0 z-[100] bg-[#0D1117]" onClick={onClose}>
       <div className="w-full h-full flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-white/8">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-white/8">
           <div className="flex items-center gap-4">
             <img src={logoUrl(ticker)} alt="" className="w-8 h-8 rounded-full border border-white/10 bg-[#0B0E14]" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             <h2 className="text-xl font-black text-white tracking-wider">{ticker}</h2>
@@ -376,8 +376,8 @@ export default function ChartModal({ ticker, open, onClose }: Props) {
           </div>
         </div>
 
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 px-5 py-2.5 border-b border-white/5">
+        {/* Toolbar — full width like TradingView */}
+        <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 border-b border-white/5 overflow-x-auto">
           <div className="flex gap-1">
             {PERIODS.map(p => (
               <button key={p.value} onClick={() => setPeriod(p.value)}
@@ -548,7 +548,7 @@ export default function ChartModal({ ticker, open, onClose }: Props) {
           )}
 
           {/* Chart area */}
-          <div className="flex-1 overflow-y-auto px-2 py-2 relative min-h-0">
+          <div className="flex-1 overflow-y-auto relative min-h-0">
             {loading && (
               <div className="absolute inset-0 flex items-center justify-center z-10 bg-[#0D1117]/80">
                 <Loader2 className="w-8 h-8 animate-spin text-[#D0FD3E]" />
