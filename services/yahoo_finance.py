@@ -190,6 +190,47 @@ def get_live_price(ticker: str) -> float:
     except:
         return GLOBAL_PRICE_CACHE.get(ticker, 0.0)
 
+def batch_get_prices(tickers: list[str]) -> dict[str, float]:
+    """Fetch prices for multiple tickers in a single yf.download call. Cache-first."""
+    now = time.time()
+    result: dict[str, float] = {}
+    need_fetch: list[str] = []
+
+    for t in tickers:
+        if t in GLOBAL_PRICE_CACHE and (now - PRICE_CACHE_TIME.get(t, 0)) < PRICE_CACHE_TTL:
+            result[t] = GLOBAL_PRICE_CACHE[t]
+        else:
+            need_fetch.append(t)
+
+    if not need_fetch:
+        return result
+
+    try:
+        data = yf.download(need_fetch, period="5d", interval="1d", progress=False, auto_adjust=True)
+        if not data.empty:
+            for t in need_fetch:
+                try:
+                    if isinstance(data.columns, pd.MultiIndex):
+                        series = data["Close"][t].dropna()
+                    else:
+                        series = data["Close"].dropna()
+                    if not series.empty:
+                        price = float(series.iloc[-1])
+                        if price > 0:
+                            GLOBAL_PRICE_CACHE[t] = price
+                            PRICE_CACHE_TIME[t] = now
+                            result[t] = price
+                            continue
+                except Exception:
+                    pass
+                result[t] = GLOBAL_PRICE_CACHE.get(t, 0.0)
+    except Exception:
+        for t in need_fetch:
+            result[t] = GLOBAL_PRICE_CACHE.get(t, 0.0)
+
+    return result
+
+
 def get_sparkline_data(ticker: str, days: int = 7):
     now = time.time()
     closes = GLOBAL_SPARKLINE_CACHE.get(ticker, [])

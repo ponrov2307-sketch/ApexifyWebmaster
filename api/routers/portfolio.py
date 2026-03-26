@@ -10,7 +10,7 @@ from core.models import (
     get_portfolio,
     update_portfolio_stock,
 )
-from services.yahoo_finance import get_live_price, get_real_dividend_data, get_sparkline_data, get_usd_thb_rate
+from services.yahoo_finance import get_live_price, get_real_dividend_data, get_sparkline_data, get_usd_thb_rate, batch_get_prices
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -29,14 +29,15 @@ class StockUpdate(BaseModel):
     alert_price: float = 0.0
 
 
-@router.get("")
-async def list_portfolio(user: CurrentUser, currency: str = "USD"):
-    portfolio = get_portfolio(user.user_id)
-    if not portfolio:
-        return {"items": [], "summary": {"total_value": 0, "total_cost": 0, "total_pnl": 0, "total_pnl_pct": 0}}
-
+def _build_portfolio_response(portfolio: list, currency: str) -> dict:
+    """Synchronous helper — safe to run in a thread."""
     actual_thb_rate = get_usd_thb_rate()
     thb_rate = actual_thb_rate if currency == "THB" else 1.0
+
+    # Batch fetch all prices in ONE yfinance call (much faster than N individual calls)
+    tickers = [s["ticker"] for s in portfolio]
+    prices = batch_get_prices(tickers)
+
     items = []
     total_value = 0.0
     total_cost = 0.0
@@ -46,7 +47,7 @@ async def list_portfolio(user: CurrentUser, currency: str = "USD"):
         shares = stock["shares"]
         avg_cost = stock["avg_cost"]
 
-        price = get_live_price(ticker) or 0.0
+        price = prices.get(ticker, 0.0)
         value = price * shares
         cost = avg_cost * shares
         pnl = value - cost
@@ -86,6 +87,21 @@ async def list_portfolio(user: CurrentUser, currency: str = "USD"):
             "thb_rate": round(actual_thb_rate, 4),
         },
     }
+
+
+@router.get("")
+async def list_portfolio(user: CurrentUser, currency: str = "USD"):
+    import asyncio
+
+    portfolio = get_portfolio(user.user_id)
+    if not portfolio:
+        return {"items": [], "summary": {"total_value": 0, "total_cost": 0, "total_pnl": 0, "total_pnl_pct": 0}}
+
+    try:
+        return await asyncio.to_thread(_build_portfolio_response, portfolio, currency)
+    except Exception:
+        # Fallback: return empty rather than 500
+        return {"items": [], "summary": {"total_value": 0, "total_cost": 0, "total_pnl": 0, "total_pnl_pct": 0}}
 
 
 STOCK_LIMITS = {"free": 3, "vip": 10}  # pro/admin = unlimited

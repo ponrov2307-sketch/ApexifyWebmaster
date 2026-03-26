@@ -81,19 +81,27 @@ async def live_price(ticker: str, user: CurrentUser):
     return {"ticker": ticker.upper(), "price": price or 0.0}
 
 
-@router.get("/macro")
-async def macro_data(user: CurrentUser):
+_MACRO_CACHE: dict = {}
+_MACRO_CACHE_TIME: float = 0
+_MACRO_CACHE_TTL = 60  # 1 minute
+
+
+def _fetch_macro():
+    from services.yahoo_finance import batch_get_prices
+
     try:
         fg_value, fg_text = get_real_fear_and_greed()
     except Exception:
         fg_value, fg_text = 0, "Unavailable"
 
-    vix = get_live_price("^VIX") or 0.0
+    # Batch fetch all index prices + VIX in one call
+    all_tickers = list(MARKET_INDICES.keys()) + ["^VIX"]
+    prices = batch_get_prices(all_tickers)
+    vix = prices.get("^VIX", 0.0)
 
     indices = {}
     for symbol, name in MARKET_INDICES.items():
-        price = get_live_price(symbol)
-        indices[symbol] = {"name": name, "price": price or 0.0}
+        indices[symbol] = {"name": name, "price": prices.get(symbol, 0.0)}
 
     try:
         raw_sectors = get_real_sector_rotation()
@@ -107,6 +115,24 @@ async def macro_data(user: CurrentUser):
         "indices": indices,
         "sectors": sectors,
     }
+
+
+@router.get("/macro")
+async def macro_data(user: CurrentUser):
+    import asyncio
+    global _MACRO_CACHE, _MACRO_CACHE_TIME
+
+    now = time.time()
+    if _MACRO_CACHE and (now - _MACRO_CACHE_TIME) < _MACRO_CACHE_TTL:
+        return _MACRO_CACHE
+
+    try:
+        data = await asyncio.to_thread(_fetch_macro)
+        _MACRO_CACHE = data
+        _MACRO_CACHE_TIME = now
+        return data
+    except Exception:
+        return _MACRO_CACHE or {"fear_greed": {"value": 0, "text": "Unavailable"}, "vix": 0, "indices": {}, "sectors": {}}
 
 
 @router.get("/support-resistance/{ticker}")
