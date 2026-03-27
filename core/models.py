@@ -331,14 +331,21 @@ def remove_watchlist_item(user_id: str, ticker: str):
 
 # ─── Online Presence ───
 
+_LAST_SEEN_COL_READY = False
+
+
 def _ensure_last_seen_column():
-    """Add last_seen column to users table if it doesn't exist."""
+    """Add last_seen column to users table if it doesn't exist. Runs once."""
+    global _LAST_SEEN_COL_READY
+    if _LAST_SEEN_COL_READY:
+        return
     try:
         with get_db_connection() as conn:
             c = conn.cursor()
             c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP")
             conn.commit()
             c.close()
+        _LAST_SEEN_COL_READY = True
     except Exception as e:
         print(f"❌ DB Error (ensure_last_seen): {e}")
 
@@ -387,7 +394,13 @@ def get_online_users():
 
 # ── Social Feed ──────────────────────────────────────────────
 
+_SOCIAL_TABLES_READY = False
+
+
 def _ensure_social_tables():
+    global _SOCIAL_TABLES_READY
+    if _SOCIAL_TABLES_READY:
+        return
     try:
         with get_db_connection() as conn:
             c = conn.cursor()
@@ -424,6 +437,7 @@ def _ensure_social_tables():
             """)
             conn.commit()
             c.close()
+        _SOCIAL_TABLES_READY = True
     except Exception as e:
         print(f"❌ DB Error (_ensure_social_tables): {e}")
 

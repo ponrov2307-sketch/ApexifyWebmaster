@@ -1,7 +1,11 @@
 """Shared FastAPI dependencies — auth, current user, role checks."""
 
+import warnings
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
+
+# Suppress JWT InsecureKeyLengthWarning (key length is set via env var)
+warnings.filterwarnings("ignore", message=".*HMAC key.*below the minimum.*")
 
 import jwt
 from fastapi import Depends, Header, HTTPException, status

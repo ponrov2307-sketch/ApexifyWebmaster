@@ -225,7 +225,7 @@ export default function HeatmapPage() {
           ) : (
             <>
               {/* Treemap */}
-              <div ref={containerRef} className="border rounded-2xl overflow-hidden mb-4 relative" style={{ background: "#0a0e17", borderColor: "var(--border-default)", height: dims.h }}>
+              <div ref={containerRef} className="overflow-hidden mb-4 relative w-full" style={{ background: "var(--bg-card)", height: dims.h }}>
                 {portfolioRects.map((r) => {
                   const s = r as typeof stocks[0] & TRect;
                   const up = s.pnl_pct >= 0;
@@ -366,7 +366,7 @@ export default function HeatmapPage() {
               </div>
 
               {/* Big treemap — sectors as rectangles, stocks inside */}
-              <div className="border rounded-2xl overflow-hidden mb-3" style={{ background: "#0a0e17", borderColor: "var(--border-default)", height: dims.h, position: "relative" }}>
+              <div className="overflow-hidden mb-3 w-full" style={{ background: "var(--bg-card)", height: dims.h, position: "relative" }}>
                 {sectorRects.map((sr) => {
                   const sector = sr as typeof sp500Sectors[0] & TRect;
                   const avgUp = sector.avg >= 0;
