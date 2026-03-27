@@ -31,10 +31,55 @@ import {
   Activity,
   Crown,
   Brain,
+  Clock,
 } from "lucide-react";
 
 type SortMode = "az" | "profit" | "value";
 type GroupFilter = "ALL" | "DCA" | "DIV" | "TRADING";
+
+/* ── Market Status Widget ── */
+function MarketStatus() {
+  const now = new Date();
+  // ET offset: UTC-5 (EST) or UTC-4 (EDT)
+  // Simple approximation: use Intl to get ET hour
+  const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "numeric", hour12: false });
+  const [hStr, mStr] = etStr.split(":");
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  const totalMin = h * 60 + m;
+  const dayOfWeek = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" })).getDay();
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+  let label: string;
+  let color: string;
+  let dot: string;
+
+  if (isWeekend) {
+    label = "Market Closed"; color = "#8B949E"; dot = "#8B949E";
+  } else if (totalMin >= 570 && totalMin < 960) {
+    // 9:30 AM - 4:00 PM ET
+    label = "Market Open"; color = "#32D74B"; dot = "#32D74B";
+  } else if (totalMin >= 240 && totalMin < 570) {
+    // 4:00 AM - 9:30 AM ET
+    label = "Pre-Market"; color = "#FCD535"; dot = "#FCD535";
+  } else if (totalMin >= 960 && totalMin < 1200) {
+    // 4:00 PM - 8:00 PM ET
+    label = "After-Hours"; color = "#FF9500"; dot = "#FF9500";
+  } else {
+    label = "Market Closed"; color = "#8B949E"; dot = "#8B949E";
+  }
+
+  return (
+    <div className="flex items-center gap-2 mb-2">
+      <Clock size={12} style={{ color }} />
+      <div className="flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: dot }} />
+        <span className="text-xs font-black" style={{ color }}>{label}</span>
+      </div>
+      <span className="text-[10px] text-gray-600 tabular-nums ml-auto">{etStr} ET</span>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const user = useAuth((s) => s.user);
@@ -178,27 +223,47 @@ export default function DashboardPage() {
           <p className="text-[10px] text-[#39C8FF] font-black tracking-widest uppercase mb-1">
             {tr("dashboard.command_center", lang)}
           </p>
-          <div className="flex items-center gap-1.5 mb-2">
-            <Zap size={14} className="text-[#D0FD3E]" />
-            <span className="text-xs text-[#D0FD3E]/70 font-bold">Live prices · Auto-refresh 30s</span>
-          </div>
+
+          {/* Market Status */}
+          <MarketStatus />
 
           {macroData && (
-            <div className="flex items-center gap-4 mb-3">
-              <div className="flex items-center gap-2">
-                <Activity size={14} className="text-[#FCD535]" />
-                <span className="text-[10px] text-gray-500 font-bold">F&G:</span>
-                <span className="text-sm font-black" style={{ color: macroData.fear_greed.value <= 25 ? "#FF453A" : macroData.fear_greed.value <= 55 ? "#FCD535" : "#32D74B" }}>
-                  {macroData.fear_greed.value}
-                </span>
+            <div className="space-y-2 mb-3">
+              {/* F&G + VIX row */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Activity size={14} className="text-[#FCD535]" />
+                  <span className="text-[10px] text-gray-500 font-bold">F&G:</span>
+                  <span className="text-sm font-black" style={{ color: macroData.fear_greed.value <= 25 ? "#FF453A" : macroData.fear_greed.value <= 55 ? "#FCD535" : "#32D74B" }}>
+                    {macroData.fear_greed.value}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Activity size={14} className="text-[#FF9500]" />
+                  <span className="text-[10px] text-gray-500 font-bold">VIX:</span>
+                  <span className="text-sm font-black" style={{ color: macroData.vix < 20 ? "#32D74B" : macroData.vix < 30 ? "#FCD535" : "#FF453A" }}>
+                    {macroData.vix.toFixed(2)}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Activity size={14} className="text-[#FF9500]" />
-                <span className="text-[10px] text-gray-500 font-bold">VIX:</span>
-                <span className="text-sm font-black" style={{ color: macroData.vix < 20 ? "#32D74B" : macroData.vix < 30 ? "#FCD535" : "#FF453A" }}>
-                  {macroData.vix.toFixed(2)}
-                </span>
-              </div>
+              {/* Top Movers */}
+              {macroData.top_movers && macroData.top_movers.length > 0 && (
+                <div>
+                  <p className="text-[9px] text-gray-600 font-black tracking-widest uppercase mb-1">TOP MOVERS</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {macroData.top_movers.map((m) => (
+                      <div key={m.ticker} className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black"
+                        style={{
+                          background: m.change_pct >= 0 ? "rgba(50,215,75,0.1)" : "rgba(255,69,58,0.1)",
+                          color: m.change_pct >= 0 ? "#32D74B" : "#FF453A",
+                        }}>
+                        {m.ticker}
+                        <span className="tabular-nums">{m.change_pct >= 0 ? "+" : ""}{m.change_pct.toFixed(2)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -132,11 +132,18 @@ export function useMarketSummary() {
 }
 
 // ─── Macro Data ───
+export interface TopMover {
+  ticker: string;
+  price: number;
+  change_pct: number;
+}
+
 export interface MacroData {
   fear_greed: { value: number; text: string };
   vix: number;
   indices: Record<string, { name: string; price: number }>;
   sectors: Record<string, number>;
+  top_movers?: TopMover[];
 }
 
 export function useMacro() {

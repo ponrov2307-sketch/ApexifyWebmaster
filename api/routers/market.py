@@ -18,6 +18,7 @@ from services.yahoo_finance import (
     get_real_fear_and_greed,
     get_real_sector_rotation,
     get_support_resistance,
+    get_top_movers,
 )
 
 router = APIRouter(prefix="/api/market", tags=["market"])
@@ -113,11 +114,17 @@ def _fetch_macro():
     except Exception:
         sectors = {}
 
+    try:
+        top_movers = get_top_movers(n=3)
+    except Exception:
+        top_movers = []
+
     return {
         "fear_greed": {"value": fg_value, "text": fg_text},
         "vix": vix,
         "indices": indices,
         "sectors": sectors,
+        "top_movers": top_movers,
     }
 
 

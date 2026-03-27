@@ -235,6 +235,55 @@ def batch_get_prices(tickers: list[str]) -> dict[str, float]:
     return result
 
 
+_TOP_MOVERS_CACHE: list = []
+_TOP_MOVERS_TIME: float = 0
+_TOP_MOVERS_TTL = 300  # 5 minutes
+
+_TOP_MOVERS_WATCH = [
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AMD", "NFLX", "PYPL",
+    "JPM", "GS", "BAC", "V", "MA", "COIN", "PLTR", "SNOW", "CRM", "NOW",
+    "UNH", "LLY", "ABBV", "MRK", "JNJ", "XOM", "CVX", "AVGO", "QCOM", "INTC",
+    "SPY", "QQQ", "SHOP", "MELI", "SE", "NET", "CRWD", "DDOG", "MDB", "UBER",
+]
+
+def get_top_movers(n: int = 3) -> list[dict]:
+    """Return top N gainers and top N losers by daily % change. Cached 5 min."""
+    global _TOP_MOVERS_CACHE, _TOP_MOVERS_TIME
+    now = time.time()
+    if _TOP_MOVERS_CACHE and (now - _TOP_MOVERS_TIME) < _TOP_MOVERS_TTL:
+        return _TOP_MOVERS_CACHE
+
+    try:
+        data = yf.download(_TOP_MOVERS_WATCH, period="5d", interval="1d", progress=False, auto_adjust=True)
+        if data.empty:
+            return _TOP_MOVERS_CACHE
+        close = data["Close"]
+        if isinstance(close, pd.DataFrame):
+            prev = close.iloc[-2] if len(close) >= 2 else close.iloc[-1]
+            curr = close.iloc[-1]
+        else:
+            return _TOP_MOVERS_CACHE
+
+        changes = []
+        for t in _TOP_MOVERS_WATCH:
+            try:
+                p = float(prev[t]) if not pd.isna(prev[t]) else 0
+                c = float(curr[t]) if not pd.isna(curr[t]) else 0
+                if p > 0 and c > 0:
+                    pct = ((c - p) / p) * 100
+                    changes.append({"ticker": t, "price": round(c, 2), "change_pct": round(pct, 2)})
+            except Exception:
+                continue
+
+        changes.sort(key=lambda x: x["change_pct"], reverse=True)
+        result = changes[:n] + changes[-n:]  # top N gainers + top N losers
+        _TOP_MOVERS_CACHE = result
+        _TOP_MOVERS_TIME = now
+        return result
+    except Exception:
+        return _TOP_MOVERS_CACHE
+
+
 def get_sparkline_data(ticker: str, days: int = 7):
     now = time.time()
     closes = GLOBAL_SPARKLINE_CACHE.get(ticker, [])
