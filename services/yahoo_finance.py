@@ -9,8 +9,8 @@ GLOBAL_PRICE_CACHE = {}
 GLOBAL_SPARKLINE_CACHE = {}
 PRICE_CACHE_TIME = {}
 SPARKLINE_CACHE_TIME = {}
-SPARKLINE_CACHE_TTL = 300  # 5 minutes
-PRICE_CACHE_TTL = 120  # 2 minutes — balanced between freshness and performance
+SPARKLINE_CACHE_TTL = 600  # 10 minutes
+PRICE_CACHE_TTL = 300  # 5 minutes — longer TTL reduces yfinance calls
 
 # Ticker info cache (name, div_yield, etc.) — longer TTL since it rarely changes
 _TICKER_INFO_CACHE: dict = {}

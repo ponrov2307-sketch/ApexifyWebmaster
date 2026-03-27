@@ -1,5 +1,7 @@
 """Watchlist CRUD endpoints — enhanced with sparkline, change %, volume, and dividend data."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
@@ -9,7 +11,7 @@ from core.models import (
     add_watchlist_item,
     remove_watchlist_item,
 )
-from services.yahoo_finance import get_live_price, get_sparkline_data, get_ticker_info
+from services.yahoo_finance import batch_get_prices, get_sparkline_data, get_ticker_info
 
 router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])
 
@@ -20,14 +22,16 @@ class WatchlistAdd(BaseModel):
     ticker: str
 
 
-@router.get("")
-async def list_watchlist(user: CurrentUser):
-    tickers = get_user_watchlist(user.user_id)
+def _build_watchlist_response(tickers: list[str]) -> list:
+    """Synchronous helper — runs in a thread pool."""
+    if not tickers:
+        return []
+
+    prices = batch_get_prices(tickers)
     items = []
     for t in tickers:
-        price = get_live_price(t) or 0.0
+        price = prices.get(t, 0.0)
 
-        # Get sparkline + change data
         spark_result = get_sparkline_data(t, days=7)
         spark_values = spark_result[0] if spark_result else []
         change_pct = 0.0
@@ -37,7 +41,6 @@ async def list_watchlist(user: CurrentUser):
             if prev_close > 0:
                 change_pct = ((price - prev_close) / prev_close) * 100
 
-        # Get cached ticker info (name, div_yield, day_high, etc.)
         info = get_ticker_info(t)
 
         items.append({
@@ -53,6 +56,13 @@ async def list_watchlist(user: CurrentUser):
             "div_yield": round(info.get("div_yield", 0), 2),
             "sparkline": spark_values,
         })
+    return items
+
+
+@router.get("")
+async def list_watchlist(user: CurrentUser):
+    tickers = await asyncio.to_thread(get_user_watchlist, user.user_id)
+    items = await asyncio.to_thread(_build_watchlist_response, tickers)
     return {"items": items}
 
 
@@ -60,7 +70,7 @@ async def list_watchlist(user: CurrentUser):
 async def add_to_watchlist(user: CurrentUser, body: WatchlistAdd):
     role = user.role.lower()
     limit = ROLE_LIMITS.get(role, 3)
-    current = get_user_watchlist(user.user_id)
+    current = await asyncio.to_thread(get_user_watchlist, user.user_id)
     if len(current) >= limit:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -71,11 +81,11 @@ async def add_to_watchlist(user: CurrentUser, body: WatchlistAdd):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ticker required")
     if ticker in current:
         raise HTTPException(status.HTTP_409_CONFLICT, "Already in watchlist")
-    add_watchlist_item(user.user_id, ticker)
+    await asyncio.to_thread(add_watchlist_item, user.user_id, ticker)
     return {"ok": True}
 
 
 @router.delete("/{ticker}")
 async def remove_from_watchlist(user: CurrentUser, ticker: str):
-    remove_watchlist_item(user.user_id, ticker.upper())
+    await asyncio.to_thread(remove_watchlist_item, user.user_id, ticker.upper())
     return {"ok": True}

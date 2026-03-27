@@ -1,5 +1,6 @@
 """Market data endpoints — charts, macro, indicators."""
 
+import asyncio
 import math
 import time
 
@@ -24,28 +25,21 @@ router = APIRouter(prefix="/api/market", tags=["market"])
 
 @router.get("/summary")
 async def market_summary(user: CurrentUser):
-    raw = get_market_summary()
+    raw = await asyncio.to_thread(get_market_summary)
     return {"indices": raw}
 
 
-@router.get("/chart/{ticker}")
-async def chart_data(
-    ticker: str,
-    user: CurrentUser,
-    period: str = Query("3mo", pattern="^(1mo|3mo|6mo|1y|2y|5y|10y|20y|max)$"),
-    indicators: str = Query("", description="Comma-separated: rsi,macd,bollinger"),
-):
+def _build_chart(ticker: str, period: str, indicators: str) -> dict:
+    """Synchronous helper — safe to run in a thread."""
     candles = get_candlestick_data(ticker, period=period)
     if not candles:
         return {"candles": [], "indicators": {}}
 
     result: dict = {"candles": candles, "indicators": {}}
-
     closes = [c["close"] for c in candles]
     requested = {s.strip().lower() for s in indicators.split(",") if s.strip()}
 
     def _clean(v):
-        """Replace NaN/Inf with None so JSON serialization works."""
         if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
             return None
         return v
@@ -75,15 +69,25 @@ async def chart_data(
     return result
 
 
+@router.get("/chart/{ticker}")
+async def chart_data(
+    ticker: str,
+    user: CurrentUser,
+    period: str = Query("3mo", pattern="^(1mo|3mo|6mo|1y|2y|5y|10y|20y|max)$"),
+    indicators: str = Query("", description="Comma-separated: rsi,macd,bollinger"),
+):
+    return await asyncio.to_thread(_build_chart, ticker, period, indicators)
+
+
 @router.get("/price/{ticker}")
 async def live_price(ticker: str, user: CurrentUser):
-    price = get_live_price(ticker)
+    price = await asyncio.to_thread(get_live_price, ticker)
     return {"ticker": ticker.upper(), "price": price or 0.0}
 
 
 _MACRO_CACHE: dict = {}
 _MACRO_CACHE_TIME: float = 0
-_MACRO_CACHE_TTL = 120  # 2 minutes
+_MACRO_CACHE_TTL = 300  # 5 minutes
 
 
 def _fetch_macro():
@@ -137,7 +141,7 @@ async def macro_data(user: CurrentUser):
 
 @router.get("/support-resistance/{ticker}")
 async def support_resistance(ticker: str, user: CurrentUser):
-    data = get_support_resistance(ticker)
+    data = await asyncio.to_thread(get_support_resistance, ticker)
     return data or {"support": [], "resistance": []}
 
 

@@ -1,5 +1,6 @@
 """AI-powered endpoints (Port Doctor, Rebalance, Copilot)."""
 
+import asyncio
 import random
 import time
 
@@ -127,36 +128,28 @@ def _ensure_pool(force: bool = False) -> None:
         _POOL_GENERATING = False
 
 
-@router.post("/matchmaker")
-async def matchmaker(user: CurrentUser, body: MatchmakerRequest):
-    if user.role.lower() not in ("pro", "admin"):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "PRO or ADMIN required")
-
-    uid = user.user_id
+def _run_matchmaker(uid: str, portfolio_tickers: list[str], watchlist_tickers: list[str]) -> list[dict]:
+    """Synchronous matchmaker logic — runs in a thread pool."""
+    global _POOL, _POOL_GENERATING
 
     # Build exclusion set: portfolio + watchlist + already seen by this user
-    exclude = {t.upper() for t in body.tickers}
-    exclude |= {t.upper() for t in body.watchlist}
+    exclude = {t.upper() for t in portfolio_tickers}
+    exclude |= {t.upper() for t in watchlist_tickers}
     exclude |= _USER_SEEN.get(uid, set())
 
-    # Ensure pool exists
     _ensure_pool(force=False)
 
-    # Filter pool for this user
     available = [r for r in _POOL if r.get("ticker", "").upper() not in exclude]
 
-    # If not enough results, generate more into the pool
     if len(available) < 10:
         _ensure_pool(force=True)
         available = [r for r in _POOL if r.get("ticker", "").upper() not in exclude]
 
-    # Still not enough? Reset seen list and try again (cycled through all)
     if len(available) < 5:
         _USER_SEEN[uid] = set()
-        exclude = {t.upper() for t in body.tickers} | {t.upper() for t in body.watchlist}
+        exclude = {t.upper() for t in portfolio_tickers} | {t.upper() for t in watchlist_tickers}
         available = [r for r in _POOL if r.get("ticker", "").upper() not in exclude]
 
-    # Pick from available — enrich and validate, skip invalid tickers
     random.shuffle(available)
     results = []
     skipped_tickers = set()
@@ -165,7 +158,6 @@ async def matchmaker(user: CurrentUser, body: MatchmakerRequest):
             break
         try:
             enriched = _enrich_recommendation(rec, fast=False)
-            # Skip tickers with no valid price (likely invalid/delisted)
             if enriched.get("price", 0) <= 0:
                 skipped_tickers.add(rec.get("ticker", ""))
                 continue
@@ -174,15 +166,24 @@ async def matchmaker(user: CurrentUser, body: MatchmakerRequest):
             skipped_tickers.add(rec.get("ticker", ""))
             continue
 
-    # Remove invalid tickers from pool so they won't be picked again
     if skipped_tickers:
         _POOL[:] = [r for r in _POOL if r.get("ticker", "") not in skipped_tickers]
 
-    # Track what this user has seen
     seen = _USER_SEEN.get(uid, set())
     seen |= {r.get("ticker", "").upper() for r in results}
     _USER_SEEN[uid] = seen
 
+    return results
+
+
+@router.post("/matchmaker")
+async def matchmaker(user: CurrentUser, body: MatchmakerRequest):
+    if user.role.lower() not in ("pro", "admin"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "PRO or ADMIN required")
+
+    results = await asyncio.to_thread(
+        _run_matchmaker, user.user_id, body.tickers, body.watchlist
+    )
     return {"recommendations": results}
 
 
@@ -191,7 +192,7 @@ async def port_doctor(user: CurrentUser, body: PortDoctorRequest):
     if user.role.lower() not in ("pro", "admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "PRO or ADMIN required")
 
-    diagnosis = generate_port_doctor_diagnosis(body.portfolio)
+    diagnosis = await asyncio.to_thread(generate_port_doctor_diagnosis, body.portfolio)
     return {"diagnosis": diagnosis}
 
 
@@ -200,7 +201,7 @@ async def rebalance(user: CurrentUser, body: RebalanceRequest):
     if user.role.lower() not in ("pro", "admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "PRO or ADMIN required")
 
-    result = generate_rebalance_strategy(body.portfolio)
+    result = await asyncio.to_thread(generate_rebalance_strategy, body.portfolio)
     return {"strategy": result}
 
 
@@ -209,15 +210,12 @@ async def copilot(user: CurrentUser, body: CopilotRequest):
     if user.role.lower() not in ("pro", "admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "PRO or ADMIN required")
 
-    reply = generate_copilot_reply(body.message, user.role.lower())
+    reply = await asyncio.to_thread(generate_copilot_reply, body.message, user.role.lower())
     return {"reply": reply}
 
 
-@router.post("/morning-briefing")
-async def morning_briefing(user: CurrentUser):
-    if user.role.lower() not in ("pro", "admin"):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "PRO or ADMIN required")
-
+def _build_morning_briefing() -> str:
+    """Synchronous helper — runs in a thread pool."""
     try:
         fg_value, fg_text = get_real_fear_and_greed()
     except Exception:
@@ -237,6 +235,13 @@ VIX: {vix:.2f}
 Top Sector Flows:
 {sector_summary}
 """
+    return generate_morning_briefing(market_summary)
 
-    result = generate_morning_briefing(market_summary)
+
+@router.post("/morning-briefing")
+async def morning_briefing(user: CurrentUser):
+    if user.role.lower() not in ("pro", "admin"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "PRO or ADMIN required")
+
+    result = await asyncio.to_thread(_build_morning_briefing)
     return {"briefing": result}

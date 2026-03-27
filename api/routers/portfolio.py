@@ -89,18 +89,21 @@ def _build_portfolio_response(portfolio: list, currency: str) -> dict:
     }
 
 
+def _get_portfolio_full(user_id: str, currency: str) -> dict:
+    """Synchronous helper — DB + yfinance in one thread."""
+    portfolio = get_portfolio(user_id)
+    if not portfolio:
+        return {"items": [], "summary": {"total_value": 0, "total_cost": 0, "total_pnl": 0, "total_pnl_pct": 0}}
+    return _build_portfolio_response(portfolio, currency)
+
+
 @router.get("")
 async def list_portfolio(user: CurrentUser, currency: str = "USD"):
     import asyncio
 
-    portfolio = get_portfolio(user.user_id)
-    if not portfolio:
-        return {"items": [], "summary": {"total_value": 0, "total_cost": 0, "total_pnl": 0, "total_pnl_pct": 0}}
-
     try:
-        return await asyncio.to_thread(_build_portfolio_response, portfolio, currency)
+        return await asyncio.to_thread(_get_portfolio_full, user.user_id, currency)
     except Exception:
-        # Fallback: return empty rather than 500
         return {"items": [], "summary": {"total_value": 0, "total_cost": 0, "total_pnl": 0, "total_pnl_pct": 0}}
 
 
@@ -109,18 +112,20 @@ STOCK_LIMITS = {"free": 3, "vip": 10}  # pro/admin = unlimited
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def add_stock(user: CurrentUser, body: StockAdd):
+    import asyncio
+
     role = user.role.lower()
     limit = STOCK_LIMITS.get(role)
     if limit is not None:
-        current = get_portfolio(user.user_id) or []
+        current = await asyncio.to_thread(get_portfolio, user.user_id) or []
         if len(current) >= limit:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
                 f"{role.upper()} can hold max {limit} stocks. Upgrade to unlock more!",
             )
 
-    ok = add_portfolio_stock(
-        user.user_id, body.ticker, body.shares, body.avg_cost, body.asset_group
+    ok = await asyncio.to_thread(
+        add_portfolio_stock, user.user_id, body.ticker, body.shares, body.avg_cost, body.asset_group
     )
     if not ok:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to add stock")
@@ -129,8 +134,10 @@ async def add_stock(user: CurrentUser, body: StockAdd):
 
 @router.put("/{ticker}")
 async def update_stock(ticker: str, user: CurrentUser, body: StockUpdate):
-    ok = update_portfolio_stock(
-        user.user_id, ticker, body.shares, body.avg_cost, body.asset_group, body.alert_price
+    import asyncio
+
+    ok = await asyncio.to_thread(
+        update_portfolio_stock, user.user_id, ticker, body.shares, body.avg_cost, body.asset_group, body.alert_price
     )
     if not ok:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update stock")
@@ -139,20 +146,19 @@ async def update_stock(ticker: str, user: CurrentUser, body: StockUpdate):
 
 @router.delete("/{ticker}")
 async def remove_stock(ticker: str, user: CurrentUser):
-    ok = delete_portfolio_stock(user.user_id, ticker)
+    import asyncio
+
+    ok = await asyncio.to_thread(delete_portfolio_stock, user.user_id, ticker)
     if not ok:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to delete stock")
     return {"ok": True, "ticker": ticker.upper()}
 
 
-@router.get("/dividends")
-async def portfolio_dividends(user: CurrentUser, currency: str = "USD"):
-    portfolio = get_portfolio(user.user_id)
-    if not portfolio:
-        return {"items": [], "summary": {"total_annual": 0, "total_monthly": 0, "avg_yield": 0}}
-
+def _build_dividends_response(portfolio: list, currency: str) -> dict:
+    """Synchronous helper — safe to run in a thread."""
     tickers = [s["ticker"] for s in portfolio]
     div_data = get_real_dividend_data(tickers)
+    prices = batch_get_prices(tickers)
     thb_rate = get_usd_thb_rate() if currency == "THB" else 1.0
 
     items = []
@@ -161,7 +167,7 @@ async def portfolio_dividends(user: CurrentUser, currency: str = "USD"):
     for stock in portfolio:
         ticker = stock["ticker"]
         shares = stock["shares"]
-        price = get_live_price(ticker) or 0.0
+        price = prices.get(ticker, 0.0)
         value = price * shares
 
         info = div_data.get(ticker, {})
@@ -197,3 +203,14 @@ async def portfolio_dividends(user: CurrentUser, currency: str = "USD"):
             "currency": currency,
         },
     }
+
+
+@router.get("/dividends")
+async def portfolio_dividends(user: CurrentUser, currency: str = "USD"):
+    import asyncio
+
+    portfolio = get_portfolio(user.user_id)
+    if not portfolio:
+        return {"items": [], "summary": {"total_annual": 0, "total_monthly": 0, "avg_yield": 0}}
+
+    return await asyncio.to_thread(_build_dividends_response, portfolio, currency)
