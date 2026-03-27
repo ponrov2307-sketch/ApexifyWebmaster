@@ -40,12 +40,13 @@ export default function DashboardLayout({
     }
   }, [loading, user, router]);
 
-  // Heartbeat — update last_seen every 30s so admin can see who's online
+  // Heartbeat — update last_seen every 60s so admin can see who's online
   useEffect(() => {
     if (!user) return;
     const ping = () => api.post("/api/admin/heartbeat").catch(() => {});
-    ping();
-    const id = setInterval(ping, 30_000);
+    // Delay first ping 5s to not compete with initial data load
+    const firstPing = setTimeout(ping, 5000);
+    const id = setInterval(ping, 60_000);
 
     // Clear presence immediately when tab closes
     const handleUnload = () => {
@@ -61,6 +62,7 @@ export default function DashboardLayout({
     window.addEventListener("beforeunload", handleUnload);
 
     return () => {
+      clearTimeout(firstPing);
       clearInterval(id);
       window.removeEventListener("beforeunload", handleUnload);
     };

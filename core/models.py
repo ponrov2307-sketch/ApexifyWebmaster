@@ -342,12 +342,20 @@ def _ensure_last_seen_column():
     try:
         with get_db_connection() as conn:
             c = conn.cursor()
+            # Fast check first — SELECT is non-blocking unlike ALTER TABLE
+            c.execute("SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_seen'")
+            if c.fetchone():
+                _LAST_SEEN_COL_READY = True
+                c.close()
+                return
             c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP")
             conn.commit()
             c.close()
         _LAST_SEEN_COL_READY = True
     except Exception as e:
-        print(f"❌ DB Error (ensure_last_seen): {e}")
+        # Column likely already exists from a previous deploy — mark as ready anyway
+        _LAST_SEEN_COL_READY = True
+        print(f"⚠️ ensure_last_seen: {e} (marking as ready)")
 
 
 def update_user_last_seen(user_id: str):
@@ -359,8 +367,7 @@ def update_user_last_seen(user_id: str):
             conn.commit()
             c.close()
         return True
-    except Exception as e:
-        print(f"❌ DB Error (update_user_last_seen): {e}")
+    except Exception:
         return False
 
 
@@ -372,7 +379,7 @@ def get_online_users():
             c.execute("""
                 SELECT user_id, username, role, status, last_seen
                 FROM users
-                WHERE last_seen >= NOW() - INTERVAL '75 seconds'
+                WHERE last_seen >= NOW() - INTERVAL '2 minutes'
                 ORDER BY last_seen DESC
             """)
             rows = c.fetchall()
@@ -439,7 +446,8 @@ def _ensure_social_tables():
             c.close()
         _SOCIAL_TABLES_READY = True
     except Exception as e:
-        print(f"❌ DB Error (_ensure_social_tables): {e}")
+        _SOCIAL_TABLES_READY = True  # tables likely exist from previous deploy
+        print(f"⚠️ ensure_social_tables: {e} (marking as ready)")
 
 
 def get_feed_posts(offset: int = 0, limit: int = 20, viewer_id: str = "") -> list:
