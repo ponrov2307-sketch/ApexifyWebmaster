@@ -123,6 +123,15 @@ def _ensure_pool(force: bool = False) -> None:
         else:
             _POOL = enriched
 
+        # Pre-warm price cache for all pool tickers in one batch call
+        pool_tickers = [r.get("ticker", "") for r in _POOL if r.get("ticker")]
+        if pool_tickers:
+            try:
+                from services.yahoo_finance import batch_get_prices
+                batch_get_prices(pool_tickers)
+            except Exception:
+                pass
+
         _POOL_TIME = now
     finally:
         _POOL_GENERATING = False
@@ -130,6 +139,7 @@ def _ensure_pool(force: bool = False) -> None:
 
 def _run_matchmaker(uid: str, portfolio_tickers: list[str], watchlist_tickers: list[str]) -> list[dict]:
     """Synchronous matchmaker logic — runs in a thread pool."""
+    from services.yahoo_finance import batch_get_prices
     global _POOL, _POOL_GENERATING
 
     # Build exclusion set: portfolio + watchlist + already seen by this user
@@ -161,14 +171,26 @@ def _run_matchmaker(uid: str, portfolio_tickers: list[str], watchlist_tickers: l
         available = [r for r in _POOL if r.get("ticker", "").upper() not in exclude]
 
     random.shuffle(available)
+
+    # Batch-fetch prices for top 30 candidates in a single yfinance call
+    # This avoids 10+ sequential per-ticker yfinance calls during enrichment
+    candidates = available[:30]
+    candidate_tickers = [r.get("ticker", "") for r in candidates if r.get("ticker")]
+    if candidate_tickers:
+        try:
+            batch_get_prices(candidate_tickers)  # warms GLOBAL_PRICE_CACHE
+        except Exception:
+            pass
+
     results = []
     skipped_tickers = set()
-    for rec in available:
+    for rec in candidates:
         if len(results) >= 10:
             break
         try:
             enriched = _enrich_recommendation(rec, fast=False)
-            if enriched.get("price", 0) <= 0:
+            # Only strictly require price if we already have enough results
+            if enriched.get("price", 0) <= 0 and len(results) >= 5:
                 skipped_tickers.add(rec.get("ticker", ""))
                 continue
             results.append(enriched)

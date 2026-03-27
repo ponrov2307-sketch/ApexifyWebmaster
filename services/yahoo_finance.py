@@ -101,7 +101,11 @@ def get_usd_thb_rate() -> float:
     try:
         data = yf.download('THB=X', period='5d', interval='1d', progress=False)
         if not data.empty:
-            price = float(data['Close'].squeeze().dropna().iloc[-1])
+            close = data['Close']
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            series = close.dropna()
+            price = float(series.iloc[-1]) if not series.empty else 0.0
             if price > 0:
                 _THB_RATE_CACHE['rate'] = price
                 _THB_RATE_CACHE['ts'] = now

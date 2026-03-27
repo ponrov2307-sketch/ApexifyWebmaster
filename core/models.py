@@ -8,6 +8,7 @@ from contextlib import contextmanager
 # โหลดตัวแปรจากไฟล์ .env
 load_dotenv()
 DB_URL = os.getenv("DATABASE_URL")
+ADMIN_ID = os.getenv("ADMIN_ID", "")
 
 # 🌟 1. สร้าง Connection Pool (บ่อพัก) รองรับคนเข้าพร้อมกัน 1-20 ท่อ
 try:
@@ -49,9 +50,12 @@ def get_user_by_telegram(telegram_id: int):
             expiry = row[3]
             expiry_str = expiry.strftime('%d/%m/%Y') if isinstance(expiry, datetime) else str(expiry) if expiry else None
             role = row[2] if row[2] else 'free'
-            
+
+            # Auto-promote ADMIN_ID user to admin role
+            if ADMIN_ID and str(telegram_id) == str(ADMIN_ID):
+                role = 'admin'
             # 🌟 เช็ควันหมดอายุแบบ Real-time ให้หน้าเว็บ
-            if role in ['vip', 'pro'] and expiry:
+            elif role in ['vip', 'pro'] and expiry:
                 try:
                     exp_dt = datetime.strptime(expiry, '%Y-%m-%d %H:%M:%S') if isinstance(expiry, str) else expiry
                     if datetime.now() > exp_dt:
@@ -84,8 +88,12 @@ def get_user_by_username(username: str):
             expiry = row[3]
             expiry_str = expiry.strftime('%d/%m/%Y') if isinstance(expiry, datetime) else str(expiry) if expiry else None
             role = row[2] if row[2] else 'free'
+            user_id_str = str(row[0]) if row[0] else ""
 
-            if role in ['vip', 'pro'] and expiry:
+            # Auto-promote ADMIN_ID user to admin role
+            if ADMIN_ID and user_id_str == str(ADMIN_ID):
+                role = 'admin'
+            elif role in ['vip', 'pro'] and expiry:
                 try:
                     exp_dt = datetime.strptime(expiry, '%Y-%m-%d %H:%M:%S') if isinstance(expiry, str) else expiry
                     if datetime.now() > exp_dt:
