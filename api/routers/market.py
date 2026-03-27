@@ -83,7 +83,7 @@ async def live_price(ticker: str, user: CurrentUser):
 
 _MACRO_CACHE: dict = {}
 _MACRO_CACHE_TIME: float = 0
-_MACRO_CACHE_TTL = 60  # 1 minute
+_MACRO_CACHE_TTL = 120  # 2 minutes
 
 
 def _fetch_macro():

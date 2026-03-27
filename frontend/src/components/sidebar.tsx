@@ -101,7 +101,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       }
     };
     fetchMacro();
-    const interval = setInterval(fetchMacro, 30000);
+    const interval = setInterval(fetchMacro, 120000);
     return () => clearInterval(interval);
   }, []);
 

@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const user = useAuth((s) => s.user);
   const { lang } = useLang();
   const [displayCurrency, setDisplayCurrency] = useState<"USD" | "THB">("USD");
-  const { items: rawItems, summary: rawSummary, loading, error, refresh } = usePortfolio("USD", 30000);
+  const { items: rawItems, summary: rawSummary, loading, error, refresh } = usePortfolio("USD", 120000);
 
   // Client-side currency conversion — instant, no API call
   const thbRate = rawSummary?.thb_rate || 34;

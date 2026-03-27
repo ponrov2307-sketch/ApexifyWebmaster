@@ -120,7 +120,7 @@ type Sp500Data = Record<string, Sp500Stock[]>;
 
 export default function HeatmapPage() {
   const { lang } = useLang();
-  const { items: portfolio, summary, loading } = usePortfolio("USD", 30000);
+  const { items: portfolio, summary, loading } = usePortfolio("USD", 120000);
   const [tableSort, setTableSort] = useState<SortKey>("alloc");
   const [tableAsc, setTableAsc] = useState(false);
   const [tab, setTab] = useState<"portfolio" | "sp500">("portfolio");

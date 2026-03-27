@@ -25,7 +25,7 @@ export interface PortfolioSummary {
   thb_rate: number;
 }
 
-export function usePortfolio(currency: string = "USD", autoRefreshMs: number = 10000) {
+export function usePortfolio(currency: string = "USD", autoRefreshMs: number = 120000) {
   const [items, setItems] = useState<PortfolioItem[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
