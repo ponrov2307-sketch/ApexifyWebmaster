@@ -139,6 +139,16 @@ def _run_matchmaker(uid: str, portfolio_tickers: list[str], watchlist_tickers: l
 
     _ensure_pool(force=False)
 
+    # If pool is still being generated (startup or expired), wait up to 90s
+    if not _POOL and _POOL_GENERATING:
+        waited = 0
+        while _POOL_GENERATING and waited < 90:
+            time.sleep(1)
+            waited += 1
+        # If still empty after waiting, try one more time
+        if not _POOL:
+            _ensure_pool(force=False)
+
     available = [r for r in _POOL if r.get("ticker", "").upper() not in exclude]
 
     if len(available) < 10:

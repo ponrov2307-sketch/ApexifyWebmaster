@@ -1,5 +1,6 @@
 """Auth endpoints — login, token-login, me."""
 
+import asyncio
 from hmac import compare_digest
 
 import jwt
@@ -90,7 +91,7 @@ async def login(body: LoginRequest):
     except ValueError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid Telegram ID")
 
-    user = get_user_by_telegram(tid_int)
+    user = await asyncio.to_thread(get_user_by_telegram, tid_int)
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
 
@@ -112,7 +113,7 @@ async def token_login(body: TokenLoginRequest):
     except ValueError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid telegram_id in token")
 
-    user = get_user_by_telegram(tid_int)
+    user = await asyncio.to_thread(get_user_by_telegram, tid_int)
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
 
@@ -121,7 +122,7 @@ async def token_login(body: TokenLoginRequest):
 
 @router.get("/me")
 async def me(user: CurrentUser):
-    user_info = get_user_by_telegram(int(user.telegram_id))
+    user_info = await asyncio.to_thread(get_user_by_telegram, int(user.telegram_id))
     if not user_info:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     return {
@@ -132,3 +133,14 @@ async def me(user: CurrentUser):
         "vip_expiry": user_info.get("vip_expiry"),
         "telegram_id": user.telegram_id,
     }
+
+
+@router.post("/refresh", response_model=AuthResponse)
+async def refresh_token(user: CurrentUser):
+    """Re-issue JWT with the latest role from DB.
+    Call this after admin promotes/changes a user role so the JWT reflects the new role.
+    """
+    user_info = await asyncio.to_thread(get_user_by_telegram, int(user.telegram_id))
+    if not user_info:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    return _build_auth_response(user_info, user.telegram_id)

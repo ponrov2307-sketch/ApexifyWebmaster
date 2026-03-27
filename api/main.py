@@ -9,11 +9,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routers import admin, ai, alerts, auth, feed, market, news, portfolio, watchlist
 
 
+def _startup_preload():
+    """Run all startup preloads sequentially in a background thread."""
+    from services.yahoo_finance import preload_popular_stocks
+    from api.routers.ai import _ensure_pool
+
+    # 1. Preload prices & sparklines for popular stocks
+    preload_popular_stocks()
+
+    # 2. Pre-generate matchmaker pool so first user request is instant
+    try:
+        _ensure_pool(force=False)
+    except Exception as e:
+        print(f"[Startup] Matchmaker pool pre-generation failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: preload popular stock data in background thread
-    from services.yahoo_finance import preload_popular_stocks
-    t = threading.Thread(target=preload_popular_stocks, daemon=True)
+    # Startup: preload all data in background thread
+    t = threading.Thread(target=_startup_preload, daemon=True)
     t.start()
     yield
 

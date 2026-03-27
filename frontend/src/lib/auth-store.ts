@@ -78,9 +78,13 @@ export const useAuth = create<AuthState>((set) => ({
 
   refreshUser: async () => {
     try {
-      const { data } = await api.get("/api/auth/me");
-      localStorage.setItem("user", JSON.stringify(data));
-      set({ user: data });
+      // Re-issue JWT with latest DB role (handles role promotions without re-login)
+      const { data } = await api.post("/api/auth/refresh");
+      localStorage.setItem("access_token", data.access_token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      // Keep cookie in sync
+      document.cookie = `access_token=${data.access_token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+      set({ user: data.user });
     } catch {
       /* token invalid — interceptor handles redirect */
     }
